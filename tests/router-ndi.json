@@ -1,0 +1,19 @@
+{
+  "gadgetMatch": "UAC2 Gadget",
+  "physicalCaptureNode": "alsa_input.usb.example",
+  "physicalPlaybackNode": "alsa_output.usb.example",
+  "physicalCaptureChannel": "FL",
+  "physicalPlaybackLeftChannel": "FL",
+  "physicalPlaybackRightChannel": "FR",
+  "ndiAudio": { "enabled": true, "sourceName": "Tractus USB Audio Microphone" },
+  "sidetone": { "enabled": false, "gain": 1.0 },
+  "ducking": { "enabled": false, "priorityDevice": 0, "triggerSources": [0, 2, 4], "thresholdDbfs": -30.0, "depthDb": 18.0, "attackMilliseconds": 10.0, "holdMilliseconds": 150.0, "releaseMilliseconds": 400.0 },
+  "ndiReceiver": { "enabled": false, "sourceName": "", "gain": 1.0 },
+  "reconcileIntervalSeconds": 2,
+  "devices": [
+    { "number": 1, "inputEnabled": true, "outputEnabled": true, "outputGain": 1.0 },
+    { "number": 2, "inputEnabled": true, "outputEnabled": true, "outputGain": 0.2 },
+    { "number": 3, "inputEnabled": true, "outputEnabled": true, "outputGain": 0.5 },
+    { "number": 4, "inputEnabled": true, "outputEnabled": true, "outputGain": 0.0 }
+  ]
+}

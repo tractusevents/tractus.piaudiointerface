@@ -1,0 +1,20 @@
+[Unit]
+Description=Tractus USB Audio PipeWire router and control API
+After=pipewire.service wireplumber.service tractus-audio-dsp.service tractus-ndi-audio.service
+Wants=pipewire.service wireplumber.service tractus-audio-dsp.service tractus-ndi-audio.service
+
+[Service]
+Type=simple
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=PI_USB_AUDIO_CONFIG=%h/.config/pi-usb-audio/router.json
+Environment=PI_USB_AUDIO_URL=http://0.0.0.0:5055
+Environment=PI_USB_AUDIO_SERIAL=/dev/ttyGS0
+Environment=TRACTUS_DSP_SOCKET=%t/tractus-audio-dsp.sock
+Environment=TRACTUS_NDI_SOCKET=%t/tractus-ndi-audio.sock
+ExecStart=/opt/pi-usb-audio/PiUsbAudio.Control serve
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=5
+
+[Install]
+WantedBy=default.target

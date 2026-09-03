@@ -1,0 +1,15 @@
+[Unit]
+Description=Tractus USB Audio real-time DSP mixer
+After=pipewire.service
+Requires=pipewire.service
+
+[Service]
+Type=simple
+Environment=TRACTUS_DSP_SOCKET=%t/tractus-audio-dsp.sock
+ExecStart=/opt/pi-usb-audio/tractus-audio-dsp
+Restart=on-failure
+RestartSec=1
+TimeoutStopSec=5
+
+[Install]
+WantedBy=default.target

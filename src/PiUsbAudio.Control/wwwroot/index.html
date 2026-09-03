@@ -1,0 +1,1007 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Tractus USB Audio Interface</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      --surface: #151d25;
+      --surface-raised: #1b2630;
+      --line: #31404d;
+      --muted: #91a2b1;
+      --blue: #55a5ff;
+      --green: #36c894;
+      --amber: #f0ad3d;
+      --red: #d75c69;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; }
+    body { margin: 0; background: #0d1217; color: #edf4fa; }
+    main { width: min(1480px, calc(100% - 24px)); height: 100dvh; margin: 0 auto; padding: 8px 0 10px; display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 9px; }
+    header { display: flex; align-items: center; gap: 16px; padding: 2px; }
+    .brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+    .brand-logo { display: block; width: auto; height: 42px; max-height: 50px; object-fit: contain; flex: 0 0 auto; }
+    h1 { margin: 0; font-size: clamp(1.45rem, 3vw, 2.15rem); letter-spacing: -.035em; }
+    h2 { margin: 0; font-size: 1.05rem; }
+    h3 { margin: 0; }
+    .tabs { display: flex; gap: 5px; padding: 5px; border: 1px solid #293642; border-radius: 12px; background: #11181e; }
+    .tab-button { flex: 0 0 auto; border-radius: 8px; padding: 9px 18px; background: transparent; color: #aebdca; }
+    .tab-button.active { background: #2c4153; color: #fff; box-shadow: inset 0 0 0 1px #46627a; }
+    .tab-panel { display: none; min-height: 0; }
+    .tab-panel.active { display: block; overflow: auto; }
+    #tab-mixer.active { display: flex; flex-direction: column; overflow: hidden; }
+    .panel { background: var(--surface); border: 1px solid #293744; border-radius: 14px; padding: 16px; }
+    .panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+    button { border: 0; border-radius: 8px; background: var(--blue); color: #06111b; font-weight: 750; padding: 10px 15px; cursor: pointer; }
+    button:disabled { cursor: wait; opacity: .6; }
+    button.secondary { background: #2b3946; color: #dce7f0; }
+    select, input[type=text] { width: 100%; border: 1px solid #3a4b5b; border-radius: 8px; background: #0d141a; color: #f5f8fb; padding: 10px; }
+    label { display: grid; gap: 6px; color: #b9c6d2; font-size: .86rem; }
+
+    .mixer-scroll { flex: 1; min-height: 0; overflow: auto; padding-bottom: 2px; }
+    .devices { display: grid; grid-template-columns: repeat(4, minmax(180px, 1fr)) minmax(430px, 1.65fr); gap: 10px; min-width: 1190px; min-height: 100%; align-items: stretch; }
+    .channel-devices { display: contents; }
+    .device { display: flex; min-width: 0; flex-direction: column; border-radius: 11px; background: #10171d; border: 1px solid #2b3946; overflow: hidden; }
+    .strip-title { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: #1d2933; border-bottom: 1px solid #33434f; }
+    .strip-title h3 { font-size: .98rem; }
+    .strip-number { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; color: #09131c; background: var(--blue); font-weight: 850; }
+    .strip-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 9px 9px 0; }
+    .strip-buttons .solo-toggle { grid-column: 1 / -1; }
+    .route-toggle, .solo-toggle { display: grid; gap: 2px; padding: 7px 5px; min-width: 0; color: #eef5fb; font-size: .68rem; line-height: 1.05; }
+    .route-toggle strong, .solo-toggle strong { font-size: .68rem; letter-spacing: .035em; }
+    .route-toggle.on { background: #1e6a51; }
+    .route-toggle.off { background: #65343b; }
+    .solo-toggle.on { background: #ac701b; color: #fff8e6; }
+    .solo-toggle.off { background: #2b3946; color: #dce7f0; }
+    .strip-body { display: grid; grid-template-columns: 1fr 1fr 72px; gap: 5px; align-items: stretch; flex: 1; padding: 12px 7px 10px; }
+    .fader-control { display: flex; flex-direction: column; align-items: center; gap: 7px; color: #aebdca; font-size: .74rem; text-align: center; }
+    .fader-wrap { position: relative; width: 48px; height: clamp(175px, 34vh, 320px); display: grid; place-items: center; }
+    input[type=range].fader { -webkit-appearance: none; appearance: none; width: 42px; height: 100%; margin: 0; writing-mode: vertical-lr; direction: rtl; background: transparent; cursor: ns-resize; }
+    input[type=range].fader::-webkit-slider-runnable-track { width: 8px; height: 100%; border: 1px solid #58636c; border-radius: 3px; background: linear-gradient(90deg, #080b0e, #35424c 48%, #0a0e11 52%, #080b0e); box-shadow: inset 0 0 3px #000; }
+    input[type=range].fader::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 38px; height: 18px; margin-left: -16px; border: 1px solid #d7e1e8; border-radius: 3px; background: linear-gradient(to bottom, transparent 43%, #26333d 43%, #26333d 57%, transparent 57%), linear-gradient(145deg, #f8fbfd 0%, #aebdc8 46%, #71838f 53%, #dbe4ea 100%); box-shadow: 0 1px 4px #000b, inset 0 1px #fff; }
+    input[type=range].fader::-moz-range-track { width: 8px; height: 100%; border: 1px solid #58636c; border-radius: 3px; background: linear-gradient(90deg, #080b0e, #35424c 48%, #0a0e11 52%, #080b0e); box-shadow: inset 0 0 3px #000; }
+    input[type=range].fader::-moz-range-thumb { width: 38px; height: 18px; border: 1px solid #d7e1e8; border-radius: 3px; background: linear-gradient(to bottom, transparent 43%, #26333d 43%, #26333d 57%, transparent 57%), linear-gradient(145deg, #f8fbfd 0%, #aebdc8 46%, #71838f 53%, #dbe4ea 100%); box-shadow: 0 1px 4px #000b, inset 0 1px #fff; }
+    .fader-wrap .detent-mark { position: absolute; z-index: 2; top: var(--detent-top); left: 50%; width: 42px; height: 2px; border-radius: 2px; background: #f4f8fb; transform: translate(-50%, -50%); pointer-events: none; opacity: .76; }
+    .gain-value { min-width: 48px; padding: 4px 5px; border-radius: 5px; background: #202c36; color: #f3f8fc; font: 700 .74rem ui-monospace, SFMono-Regular, monospace; }
+    .master-strip .strip-title { background: #233545; }
+    .master-strip .strip-number { width: auto; padding: 0 6px; font-size: .7rem; }
+    .master-body { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; flex: 1; min-height: 0; padding: 9px 7px 10px; }
+    .utility-channel { display: flex; min-width: 0; min-height: 0; flex-direction: column; gap: 8px; }
+    .utility-channel + .utility-channel { border-left: 1px solid #283743; padding-left: 6px; }
+    .monitor-toggle, .monitor-spacer { width: 100%; height: 42px; flex: 0 0 42px; padding: 5px 4px; color: #eef5fb; font-size: .66rem; line-height: 1.08; }
+    .monitor-toggle.on { background: #1e6a51; }
+    .monitor-toggle.off { background: #65343b; }
+    .monitor-spacer { display: grid; place-items: center; color: #9eafbd; font-size: .68rem; font-weight: 750; text-transform: uppercase; letter-spacing: .05em; }
+    .utility-lane { display: grid; grid-template-columns: minmax(58px, 1fr) 64px; gap: 1px; flex: 1; min-height: 0; align-items: stretch; }
+    .master-body .fader-control { min-height: 0; }
+    .master-body .fader-wrap { flex: 1; width: 44px; height: auto; min-height: 175px; max-height: none; }
+    .master-body .meter.vertical .meter-track { flex: 1; height: auto; min-height: 175px; max-height: none; }
+
+    .meter { margin-top: 12px; }
+    .meter-label { display: flex; justify-content: space-between; gap: 10px; color: #9eafbd; font-size: .76rem; font-variant-numeric: tabular-nums; }
+    .meter-track { position: relative; height: 10px; margin-top: 5px; overflow: hidden; border-radius: 999px; background: #080c0f; border: 1px solid #283640; }
+    .meter-fill { display: block; height: 100%; width: 0; background: var(--green); transition: width 80ms linear; }
+    .meter-fill.hot { background: #ffc857; }
+    .meter-fill.clip { background: #f15b64; }
+    .meter.vertical { display: flex; flex-direction: column; align-items: center; margin: 0; }
+    .meter.vertical .meter-name { height: 1rem; color: #9eafbd; font-size: .62rem; }
+    .meter.vertical .meter-value { width: 11ch; margin-top: 7px; color: #c6d2dc; font: 700 .66rem ui-monospace, SFMono-Regular, Consolas, monospace; font-variant-numeric: tabular-nums; text-align: center; white-space: nowrap; }
+    .meter.vertical .meter-ducked { width: 11ch; margin-top: 2px; color: #ffd25f; font: 750 .66rem ui-monospace, SFMono-Regular, Consolas, monospace; font-variant-numeric: tabular-nums; text-align: center; white-space: nowrap; }
+    .meter.vertical .meter-ducked[hidden] { display: none; }
+    .meter.vertical .meter-track { display: flex; align-items: flex-end; width: 13px; height: clamp(175px, 34vh, 320px); margin-top: 7px; border-radius: 4px; }
+    .meter.vertical .meter-fill { width: 100%; height: 0; transition: height 80ms linear; }
+    .console-message { position: fixed; z-index: 20; right: 16px; bottom: 16px; max-width: min(540px, calc(100vw - 32px)); margin: 0; padding: 8px 10px; border: 1px solid #354552; border-radius: 7px; background: #111a21ee; white-space: pre-wrap; color: #c6d3dd; font-size: .76rem; pointer-events: none; }
+    .console-message:empty { display: none; }
+
+    .rack-grid { display: grid; grid-template-columns: minmax(400px, 1.35fr) repeat(2, minmax(290px, 1fr)); gap: 10px; }
+    .subpanel { min-width: 0; border-radius: 11px; background: #10171d; border: 1px solid #2b3946; padding: 16px; }
+    .subpanel h2 { margin-bottom: 14px; }
+    .duck-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 13px; }
+    .duck-trigger-control { display: grid; gap: 6px; color: #b9c6d2; font-size: .86rem; }
+    .trigger-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+    .trigger-toggle { min-width: 0; padding: 10px 3px; background: #2b3946; color: #dce7f0; font-size: .68rem; }
+    .trigger-toggle.on { background: #ac701b; color: #fff8e6; }
+    .gain-row { display: grid; grid-template-columns: 1fr 66px; align-items: center; gap: 8px; margin-top: 4px; }
+    .gain-row input[type=range] { width: 100%; accent-color: var(--blue); }
+    .slider-wrap { position: relative; display: flex; align-items: center; }
+    .slider-wrap input[type=range] { position: relative; z-index: 1; width: 100%; margin: 0; accent-color: var(--blue); }
+    .slider-wrap .detent-mark { position: absolute; z-index: 2; left: var(--detent-position); top: 50%; width: 3px; height: 13px; border-radius: 2px; background: #f8fbff; transform: translate(-50%, -50%); pointer-events: none; opacity: .8; }
+    .duck-state { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 15px; }
+    .duck-state button.on { background: #1d684f; color: #eefbf6; }
+    .duck-state button.off { background: #67343b; color: #fff0f1; }
+    .duck-indicator { font-variant-numeric: tabular-nums; color: #9eafbd; }
+    .duck-indicator.active { color: #ffcc66; font-weight: 700; }
+    .ndi-status { font-variant-numeric: tabular-nums; color: #9eafbd; }
+    .ndi-status.online { color: #74e0bd; }
+    .ndi-details { color: #8fa3b5; font-size: .78rem; font-variant-numeric: tabular-nums; margin: 10px 0 0; }
+    .setup-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
+    .channel-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .actions { display: flex; gap: 10px; margin-top: 16px; }
+    .gadget-diagnostics { margin-top: 16px; padding-top: 15px; border-top: 1px solid #33424e; }
+    .diagnostics-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+    .diagnostic-state { min-width: 72px; padding: 5px 8px; border-radius: 6px; background: #5a3339; color: #ffd8dc; font: 750 .72rem ui-monospace, SFMono-Regular, Consolas, monospace; text-align: center; }
+    .diagnostic-state.good { background: #194d3c; color: #85e8c6; }
+    .diagnostic-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0 0 12px; }
+    .diagnostic-grid > div { min-width: 0; padding: 9px 10px; border-radius: 7px; background: #10171d; border: 1px solid #293844; }
+    .diagnostic-grid dt { margin: 0 0 4px; color: #8194a4; font-size: .66rem; text-transform: uppercase; letter-spacing: .06em; }
+    .diagnostic-grid dd { margin: 0; overflow-wrap: anywhere; color: #e5edf3; font: .76rem ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .diagnostic-problems { margin: 0 0 12px; padding: 9px 11px; border: 1px solid #75444b; border-radius: 7px; background: #291a1d; color: #ffcbd0; font-size: .78rem; }
+    .diagnostic-problems:empty { display: none; }
+    .function-table { width: 100%; border-collapse: collapse; font-size: .75rem; }
+    .function-table th, .function-table td { padding: 7px 9px; border-top: 1px solid #2c3a46; text-align: left; }
+    .function-table th { color: #8295a5; font-size: .65rem; text-transform: uppercase; letter-spacing: .05em; }
+    .function-table td { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+
+    @media (max-width: 900px) {
+      .rack-grid, .setup-grid { grid-template-columns: 1fr; }
+      .duck-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .diagnostic-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 560px) {
+      main { width: min(100% - 12px, 1480px); padding-top: 6px; }
+      header { align-items: flex-start; }
+      .brand { gap: 9px; }
+      .brand-logo { height: 34px; }
+      .tabs { overflow-x: auto; }
+      .tab-button { flex: 1; padding-inline: 10px; }
+      .panel { padding: 10px; }
+      .rack-grid { display: block; }
+      .subpanel + .subpanel { margin-top: 10px; }
+      .duck-grid, .setup-grid { grid-template-columns: 1fr; }
+      .diagnostic-grid { grid-template-columns: 1fr; }
+      .function-table { min-width: 630px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="brand">
+      <img class="brand-logo" src="https://www.tractusevents.com/Logo_White_2022.png" alt="Tractus">
+      <div>
+        <h1>USB Audio Interface</h1>
+      </div>
+    </div>
+  </header>
+
+  <nav class="tabs" aria-label="Interface sections">
+    <button type="button" class="tab-button active" data-tab="mixer">Mixer</button>
+    <button type="button" class="tab-button" data-tab="processing">Processing &amp; NDI</button>
+    <button type="button" class="tab-button" data-tab="setup">Device setup</button>
+  </nav>
+
+  <section id="tab-mixer" class="tab-panel active panel">
+    <div class="panel-heading">
+      <h2>USB audio mixer</h2>
+    </div>
+    <div class="mixer-scroll">
+      <div id="devices" class="devices">
+        <div id="channelDevices" class="channel-devices"></div>
+        <div class="device master-strip">
+          <div class="strip-title"><h3>Physical output</h3><span class="strip-number">OUT</span></div>
+          <div class="master-body">
+            <div class="utility-channel">
+              <button id="sidetoneToggle" type="button" class="monitor-toggle off">Sidetone<br>MUTED</button>
+              <div class="utility-lane">
+                <label class="fader-control" data-gain-control>
+                  <span>Sidetone</span>
+                  <div class="fader-wrap" style="--detent-top: calc(33.333% + 3px)">
+                    <input id="sidetoneGain" class="fader" type="range" min="0" max="150" step="1" value="100">
+                    <span class="detent-mark" aria-hidden="true"></span>
+                  </div>
+                  <span class="gain-value">100%</span>
+                </label>
+                <div class="meter vertical" data-meter="sidetone">
+                  <span class="meter-name">MIC</span>
+                  <div class="meter-track"><span class="meter-fill"></span></div>
+                  <span class="meter-value">-∞ dBFS</span>
+                </div>
+              </div>
+            </div>
+            <div class="utility-channel">
+              <button id="ndiReceiverToggle" type="button" class="monitor-toggle off">NDI return<br>OFF</button>
+              <div class="utility-lane">
+                <label class="fader-control" data-gain-control>
+                  <span>NDI</span>
+                  <div class="fader-wrap" style="--detent-top: calc(33.333% + 3px)">
+                    <input id="ndiReceiverGain" class="fader" type="range" min="0" max="150" step="1" value="100">
+                    <span class="detent-mark" aria-hidden="true"></span>
+                  </div>
+                  <span class="gain-value">100%</span>
+                </label>
+                <div class="meter vertical" data-meter="ndi-return">
+                  <span class="meter-name">NDI</span>
+                  <div class="meter-track"><span class="meter-fill"></span></div>
+                  <span class="meter-value">-∞ dBFS</span>
+                </div>
+              </div>
+            </div>
+            <div class="utility-channel">
+              <div class="monitor-spacer">Master</div>
+              <div class="utility-lane">
+                <label class="fader-control" data-gain-control>
+                  <span>Master</span>
+                  <div class="fader-wrap" style="--detent-top: calc(33.333% + 3px)">
+                    <input id="masterGain" class="fader" type="range" min="0" max="150" step="1" value="100">
+                    <span class="detent-mark" aria-hidden="true"></span>
+                  </div>
+                  <span id="masterGainValue" class="gain-value">100%</span>
+                </label>
+                <div class="meter vertical" data-meter="mix">
+                  <span class="meter-name">OUT</span>
+                  <div class="meter-track"><span class="meter-fill"></span></div>
+                  <span class="meter-value">-∞ dBFS</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <pre id="message" class="console-message"></pre>
+  </section>
+
+  <section id="tab-processing" class="tab-panel panel">
+    <div class="rack-grid">
+      <div class="subpanel">
+        <h2>Priority ducking / sidechain</h2>
+        <div class="duck-state">
+          <button id="duckToggle" type="button" class="off">Ducking BYPASSED</button>
+          <span id="duckIndicator" class="duck-indicator">0.0 dB reduction</span>
+        </div>
+        <div class="duck-grid">
+          <div class="duck-trigger-control">Trigger sources
+            <div id="duckTriggers" class="trigger-grid">
+              <button type="button" class="trigger-toggle" data-source="0">Self</button>
+              <button type="button" class="trigger-toggle" data-source="1">Out 1</button>
+              <button type="button" class="trigger-toggle" data-source="2">Out 2</button>
+              <button type="button" class="trigger-toggle" data-source="3">Out 3</button>
+              <button type="button" class="trigger-toggle" data-source="4">Out 4</button>
+            </div>
+          </div>
+          <label>Threshold
+            <div class="gain-row"><input id="duckThreshold" type="range" min="-90" max="0" step="1"><span id="duckThresholdValue">-30 dBFS</span></div>
+          </label>
+          <label>Duck depth
+            <div class="gain-row"><input id="duckDepth" type="range" min="0" max="60" step="1"><span id="duckDepthValue">18 dB</span></div>
+          </label>
+          <label>Attack
+            <div class="gain-row"><input id="duckAttack" type="range" min="1" max="2000" step="1"><span id="duckAttackValue">10 ms</span></div>
+          </label>
+          <label>Hold
+            <div class="gain-row"><input id="duckHold" type="range" min="0" max="5000" step="10"><span id="duckHoldValue">150 ms</span></div>
+          </label>
+          <label>Release
+            <div class="gain-row"><input id="duckRelease" type="range" min="1" max="10000" step="1"><span id="duckReleaseValue">400 ms</span></div>
+          </label>
+        </div>
+      </div>
+
+      <div class="subpanel">
+        <h2>NDI microphone sender</h2>
+        <div class="duck-state">
+          <button id="ndiToggle" type="button" class="off">NDI DISABLED</button>
+          <span id="ndiStatus" class="ndi-status">Sender offline</span>
+        </div>
+        <label>NDI source name
+          <input id="ndiName" type="text" maxlength="127" value="Tractus USB Audio Microphone">
+        </label>
+        <div class="meter" data-meter="ndi-mic">
+          <div class="meter-label"><span>Sent microphone</span><span class="meter-value">-∞ dBFS</span></div>
+          <div class="meter-track"><span class="meter-fill"></span></div>
+        </div>
+        <p id="ndiDetails" class="ndi-details">Queue — · underruns — · overruns —</p>
+      </div>
+
+      <div class="subpanel">
+        <h2>NDI audio receiver</h2>
+        <div class="duck-state">
+          <button id="ndiReceiverPanelToggle" type="button" class="off">RECEIVER DISABLED</button>
+          <span id="ndiReceiverStatus" class="ndi-status">Receiver offline</span>
+        </div>
+        <label>NDI source
+          <select id="ndiReceiverSource"><option value="">No sources discovered</option></select>
+        </label>
+        <div class="meter" data-meter="ndi-receiver-native">
+          <div class="meter-label"><span>Received audio</span><span class="meter-value">-∞ dBFS</span></div>
+          <div class="meter-track"><span class="meter-fill"></span></div>
+        </div>
+        <p id="ndiReceiverDetails" class="ndi-details">Queue — · underruns — · overruns —</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-setup" class="tab-panel panel">
+    <div class="panel-heading">
+      <h2>Physical USB audio interface</h2>
+    </div>
+    <div class="setup-grid">
+      <label>Microphone/capture device
+        <select id="captureNode"></select>
+      </label>
+      <label>Microphone channel
+        <select id="captureChannel"></select>
+      </label>
+      <label>Speaker/playback device
+        <select id="playbackNode"></select>
+      </label>
+      <div class="channel-pair">
+        <label>Left channel<select id="playbackLeft"></select></label>
+        <label>Right channel<select id="playbackRight"></select></label>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="save">Save device mappings</button>
+      <button id="refresh" class="secondary">Refresh</button>
+    </div>
+    <section class="gadget-diagnostics" aria-labelledby="gadgetTitle">
+      <div class="diagnostics-heading">
+        <h2 id="gadgetTitle">USB OTG / gadget</h2>
+        <span id="gadgetHealth" class="diagnostic-state">CHECKING</span>
+      </div>
+      <dl class="diagnostic-grid">
+        <div><dt>Bound controller</dt><dd id="gadgetController">—</dd></div>
+        <div><dt>Controller state</dt><dd id="gadgetState">—</dd></div>
+        <div><dt>USB speed</dt><dd id="gadgetSpeed">—</dd></div>
+        <div><dt>USB identity</dt><dd id="gadgetIdentity">—</dd></div>
+        <div><dt>Product</dt><dd id="gadgetProduct">—</dd></div>
+        <div><dt>Serial number</dt><dd id="gadgetSerial">—</dd></div>
+        <div><dt>Active functions</dt><dd id="gadgetFunctions">—</dd></div>
+        <div><dt>Serial control</dt><dd id="gadgetSerialControl">—</dd></div>
+        <div><dt>Available UDCs</dt><dd id="gadgetUdcs">—</dd></div>
+        <div><dt>ConfigFS path</dt><dd id="gadgetPath">—</dd></div>
+        <div><dt>Power declaration</dt><dd id="gadgetPower">—</dd></div>
+        <div><dt>PipeWire routing</dt><dd id="gadgetRouting">—</dd></div>
+      </dl>
+      <div id="gadgetProblems" class="diagnostic-problems"></div>
+      <div class="mixer-scroll">
+        <table class="function-table">
+          <thead><tr><th>Function</th><th>Pi → host</th><th>Host → Pi</th><th>Sync</th><th>Requests</th></tr></thead>
+          <tbody id="gadgetAudioFunctions"><tr><td colspan="5">—</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </section>
+</main>
+<script>
+let config;
+let nodes = [];
+let ndiSources = [];
+const liveUpdates = new Map();
+let eventSource;
+
+const byId = id => document.getElementById(id);
+const escapeHtml = value => String(value).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+
+async function request(url, options) {
+  const response = await fetch(url, options);
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
+function nodeLabel(node) {
+  return `${node.description || node.name} — ${node.name}`;
+}
+
+function fillNodeSelect(element, mediaClass, selected) {
+  const candidates = nodes.filter(node => node.mediaClass === mediaClass && !node.isGadget);
+  element.innerHTML = '<option value="">Select a device…</option>' + candidates.map(node =>
+    `<option value="${escapeHtml(node.name)}" ${node.name === selected ? 'selected' : ''}>${escapeHtml(nodeLabel(node))}</option>`
+  ).join('');
+}
+
+function selectedNode(element) {
+  return nodes.find(node => node.name === element.value);
+}
+
+function fillChannelSelect(element, node, selected) {
+  const ports = node?.ports || [];
+  element.innerHTML = ports.map(port => {
+    const value = port.channel || port.name;
+    return `<option value="${escapeHtml(value)}" ${value === selected ? 'selected' : ''}>${escapeHtml(value)} (${escapeHtml(port.name)})</option>`;
+  }).join('');
+}
+
+function reportControlResult(result, fallback) {
+  const routing = result?.routing;
+  const messages = routing ? [...routing.warnings, ...routing.errors] : [];
+  byId('message').textContent = messages.join('\n') || fallback;
+  if (routing && !routing.success) loadStatus();
+}
+
+function paintSoloButton(button, solo) {
+  button.className = `solo-toggle ${solo ? 'on' : 'off'}`;
+  button.setAttribute('aria-pressed', String(solo));
+  button.title = solo ? 'Click to clear this solo' : 'Click to solo only this output';
+  button.innerHTML = `<span>Solo</span><strong>${solo ? 'ACTIVE' : 'OFF'}</strong>`;
+}
+
+async function toggleSolo(button) {
+  const number = Number(button.closest('.device').dataset.number);
+  const device = config.devices.find(value => value.number === number);
+  const nextSolo = !device.outputSolo;
+  button.disabled = true;
+  try {
+    const operation = nextSolo ? 'solo-exclusive' : 'unsolo';
+    const result = await request(`/api/outputs/${number}/${operation}`, { method: 'POST' });
+    applyControlState(result);
+    reportControlResult(result, `Output ${number} solo ${nextSolo ? 'enabled' : 'cleared'}.`);
+  } catch (error) {
+    byId('message').textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function scheduleLiveUpdate(key, operation, immediate = false) {
+  let state = liveUpdates.get(key);
+  if (!state) {
+    state = { timer: null, running: false, pending: null, immediate: false };
+    liveUpdates.set(key, state);
+  }
+  state.pending = operation;
+  state.immediate ||= immediate;
+  if (state.running) return;
+  if (state.timer) {
+    if (immediate) {
+      clearTimeout(state.timer);
+      state.timer = setTimeout(() => runLiveUpdate(key), 0);
+    }
+    return;
+  }
+  state.timer = setTimeout(() => runLiveUpdate(key), immediate ? 0 : 90);
+}
+
+async function runLiveUpdate(key) {
+  const state = liveUpdates.get(key);
+  if (!state || state.running || !state.pending) return;
+  if (state.timer) clearTimeout(state.timer);
+  state.timer = null;
+  const operation = state.pending;
+  state.pending = null;
+  state.immediate = false;
+  state.running = true;
+  try {
+    const result = await operation();
+    reportControlResult(result, 'Live mix updated.');
+  } catch (error) {
+    byId('message').textContent = error.message;
+  } finally {
+    state.running = false;
+    if (state.pending)
+      state.timer = setTimeout(() => runLiveUpdate(key), state.immediate ? 0 : 90);
+  }
+}
+
+function bindGainSlider(slider, key, endpoint, assignValue) {
+  let pointerActive = false;
+  const display = slider.closest('[data-gain-control]').querySelector('.gain-value');
+  const update = immediate => {
+    let percent = Number(slider.value);
+    if (pointerActive && Math.abs(percent - 100) <= 3) {
+      percent = 100;
+      slider.value = '100';
+    }
+    display.textContent = `${percent}%`;
+    assignValue(percent / 100);
+    byId('message').textContent = 'Applying live mix…';
+    scheduleLiveUpdate(key, () => request(`${endpoint}?percent=${encodeURIComponent(percent)}`, {
+      method: 'POST'
+    }), immediate);
+  };
+  slider.addEventListener('pointerdown', () => { pointerActive = true; });
+  slider.addEventListener('pointerup', () => { pointerActive = false; });
+  slider.addEventListener('pointercancel', () => { pointerActive = false; });
+  slider.addEventListener('input', () => update(false));
+  slider.addEventListener('change', () => update(true));
+}
+
+function paintRouteButton(button, enabled) {
+  const label = button.dataset.kind === 'input' ? 'Mic feed' : 'Output mix';
+  button.className = `route-toggle ${enabled ? 'on' : 'off'}`;
+  button.setAttribute('aria-pressed', String(enabled));
+  button.title = enabled ? `Click to mute ${label.toLowerCase()}` : `Click to enable ${label.toLowerCase()}`;
+  button.innerHTML = `<span>${label}</span><strong>${enabled ? 'ON' : 'MUTED'}</strong>`;
+}
+
+async function toggleRoute(button) {
+  const number = Number(button.closest('.device').dataset.number);
+  const device = config.devices.find(value => value.number === number);
+  const input = button.dataset.kind === 'input';
+  const enabled = input ? device.inputEnabled : device.outputEnabled;
+  const nextEnabled = !enabled;
+  const group = input ? 'mics' : 'outputs';
+  button.disabled = true;
+  try {
+    const result = await request(`/api/${group}/${number}/${nextEnabled ? 'unmute' : 'mute'}`, {
+      method: 'POST'
+    });
+    applyControlState(result);
+    reportControlResult(result,
+      `${input ? 'Microphone feed' : 'Output mix'} ${nextEnabled ? 'enabled' : 'muted'}.`);
+  } catch (error) {
+    byId('message').textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function updateInputUnlessActive(element, value) {
+  if (document.activeElement !== element)
+    element.value = String(value);
+}
+
+function paintDucking() {
+  const ducking = config.ducking;
+  const button = byId('duckToggle');
+  button.className = ducking.enabled ? 'on' : 'off';
+  button.textContent = ducking.enabled ? 'Ducking ENABLED' : 'Ducking BYPASSED';
+  button.setAttribute('aria-pressed', String(ducking.enabled));
+  const triggerSources = ducking.triggerSources || [ducking.priorityDevice];
+  document.querySelectorAll('.trigger-toggle').forEach(trigger => {
+    const selected = triggerSources.includes(Number(trigger.dataset.source));
+    trigger.className = `trigger-toggle ${selected ? 'on' : ''}`.trim();
+    trigger.setAttribute('aria-pressed', String(selected));
+  });
+  const values = [
+    ['duckThreshold', ducking.thresholdDbfs, 'duckThresholdValue', `${ducking.thresholdDbfs} dBFS`],
+    ['duckDepth', ducking.depthDb, 'duckDepthValue', `${ducking.depthDb} dB`],
+    ['duckAttack', ducking.attackMilliseconds, 'duckAttackValue', `${ducking.attackMilliseconds} ms`],
+    ['duckHold', ducking.holdMilliseconds, 'duckHoldValue', `${ducking.holdMilliseconds} ms`],
+    ['duckRelease', ducking.releaseMilliseconds, 'duckReleaseValue', `${ducking.releaseMilliseconds} ms`]
+  ];
+  for (const [sliderId, value, displayId, label] of values) {
+    updateInputUnlessActive(byId(sliderId), value);
+    byId(displayId).textContent = label;
+  }
+}
+
+function paintNdiConfiguration() {
+  const ndi = config.ndiAudio;
+  const button = byId('ndiToggle');
+  button.className = ndi.enabled ? 'on' : 'off';
+  button.textContent = ndi.enabled ? 'NDI ENABLED' : 'NDI DISABLED';
+  button.setAttribute('aria-pressed', String(ndi.enabled));
+  updateInputUnlessActive(byId('ndiName'), ndi.sourceName);
+
+  const receiver = config.ndiReceiver;
+  for (const receiverButton of [byId('ndiReceiverToggle'), byId('ndiReceiverPanelToggle')]) {
+    receiverButton.className = receiverButton.id === 'ndiReceiverToggle'
+      ? `monitor-toggle ${receiver.enabled ? 'on' : 'off'}`
+      : (receiver.enabled ? 'on' : 'off');
+    receiverButton.innerHTML = receiverButton.id === 'ndiReceiverToggle'
+      ? `NDI return<br>${receiver.enabled ? 'ON' : 'OFF'}`
+      : `RECEIVER ${receiver.enabled ? 'ENABLED' : 'DISABLED'}`;
+    receiverButton.setAttribute('aria-pressed', String(receiver.enabled));
+  }
+  const sidetoneButton = byId('sidetoneToggle');
+  sidetoneButton.className = `monitor-toggle ${config.sidetone.enabled ? 'on' : 'off'}`;
+  sidetoneButton.innerHTML = `Sidetone<br>${config.sidetone.enabled ? 'ON' : 'MUTED'}`;
+  sidetoneButton.setAttribute('aria-pressed', String(config.sidetone.enabled));
+
+  updateInputUnlessActive(byId('sidetoneGain'), Math.round(config.sidetone.gain * 100));
+  byId('sidetoneGain').closest('[data-gain-control]').querySelector('.gain-value').textContent =
+    `${Math.round(config.sidetone.gain * 100)}%`;
+  updateInputUnlessActive(byId('ndiReceiverGain'), Math.round(receiver.gain * 100));
+  byId('ndiReceiverGain').closest('[data-gain-control]').querySelector('.gain-value').textContent =
+    `${Math.round(receiver.gain * 100)}%`;
+  fillNdiSourceSelect();
+}
+
+function fillNdiSourceSelect() {
+  const select = byId('ndiReceiverSource');
+  const selected = config?.ndiReceiver?.sourceName || '';
+  const choices = [...ndiSources];
+  if (selected && !choices.includes(selected)) choices.unshift(selected);
+  select.innerHTML = '<option value="">Select an NDI source…</option>' + choices.map(name =>
+    `<option value="${escapeHtml(name)}" ${name === selected ? 'selected' : ''}>${escapeHtml(name)}</option>`
+  ).join('');
+}
+
+function applyNdiSources(list) {
+  ndiSources = Array.isArray(list?.sources) ? list.sources : [];
+  fillNdiSourceSelect();
+}
+
+function bindDuckingSlider(sliderId, key, endpoint, parameter, property, suffix) {
+  const slider = byId(sliderId);
+  const display = byId(`${sliderId}Value`);
+  const update = immediate => {
+    const value = Number(slider.value);
+    config.ducking[property] = value;
+    display.textContent = `${value} ${suffix}`;
+    scheduleLiveUpdate(`duck-${key}`, () => request(
+      `${endpoint}?${parameter}=${encodeURIComponent(value)}`, { method: 'POST' }), immediate);
+  };
+  slider.addEventListener('input', () => update(false));
+  slider.addEventListener('change', () => update(true));
+}
+
+function paintMeter(meter, peak, rms) {
+  if (!meter) return;
+  const boundedPeak = Math.max(-60, Math.min(0, peak));
+  const width = ((boundedPeak + 60) / 60) * 100;
+  const fill = meter.querySelector('.meter-fill');
+  if (meter.classList.contains('vertical')) {
+    fill.style.height = `${width}%`;
+    fill.style.width = '100%';
+  } else {
+    fill.style.width = `${width}%`;
+  }
+  fill.className = `meter-fill ${peak >= -1 ? 'clip' : peak >= -12 ? 'hot' : ''}`.trim();
+  const format = value => value <= -119 ? '-∞' : value.toFixed(1);
+  meter.querySelector('.meter-value').textContent = meter.classList.contains('vertical')
+    ? `${format(peak)} dBFS`
+    : `P ${format(peak)} / R ${format(rms)} dBFS`;
+}
+
+function paintGadget(gadget) {
+  const health = byId('gadgetHealth');
+  health.className = `diagnostic-state ${gadget.healthy ? 'good' : ''}`;
+  health.textContent = gadget.healthy ? 'HEALTHY' : 'FAULT';
+  byId('gadgetController').textContent = gadget.boundController || 'Not bound';
+  byId('gadgetState').textContent = gadget.controllerState || 'Unavailable';
+  byId('gadgetSpeed').textContent = gadget.currentSpeed
+    ? `${gadget.currentSpeed} / max ${gadget.maximumSpeed || 'unknown'}`
+    : 'Unavailable';
+  byId('gadgetIdentity').textContent =
+    `${gadget.vendorId || '—'}:${gadget.productId || '—'} · rev ${gadget.deviceRevision || '—'}`;
+  byId('gadgetProduct').textContent =
+    [gadget.manufacturer, gadget.product].filter(Boolean).join(' · ') || 'Unavailable';
+  byId('gadgetSerial').textContent = gadget.serialNumber || 'Unavailable';
+  byId('gadgetFunctions').textContent = gadget.activeFunctions.join(', ') || 'None';
+  byId('gadgetSerialControl').textContent =
+    `${gadget.serialControlDevice} · ${gadget.serialControlPresent ? 'present' : 'missing'}`;
+  byId('gadgetUdcs').textContent = gadget.availableControllers.join(', ') || 'None';
+  byId('gadgetPath').textContent = gadget.gadgetPath;
+  byId('gadgetPower').textContent = gadget.maxPowerMilliAmps == null
+    ? 'Unavailable'
+    : `${gadget.maxPowerMilliAmps} mA`;
+  byId('gadgetRouting').textContent = gadget.routing
+    ? `${gadget.routing.success ? 'OK' : 'ERROR'} · ${gadget.routing.gadgetCount} gadgets · +${gadget.routing.linksCreated}/−${gadget.routing.linksRemoved} links`
+    : 'Not applied yet';
+  byId('gadgetProblems').innerHTML = gadget.problems.map(escapeHtml).join('<br>');
+
+  const formatAudio = (channels, bitDepth, sampleRate, name) => {
+    const rate = sampleRate ? `${sampleRate / 1000} kHz` : '? kHz';
+    return `${channels ?? '?'} ch · ${bitDepth ?? '?'}-bit/${rate}${name ? ` · ${escapeHtml(name)}` : ''}`;
+  };
+  byId('gadgetAudioFunctions').innerHTML = gadget.audioFunctions.length
+    ? gadget.audioFunctions.map(item => `<tr>
+        <td>${escapeHtml(item.displayName || item.name)}</td>
+        <td>${formatAudio(item.piToHostChannels, item.piToHostBitDepth, item.piToHostSampleRate, item.piToHostName)}</td>
+        <td>${formatAudio(item.hostToPiChannels, item.hostToPiBitDepth, item.hostToPiSampleRate, item.hostToPiName)}</td>
+        <td>${escapeHtml(item.hostToPiSynchronization || '—')}</td>
+        <td>${item.requestCount ?? '—'}</td>
+      </tr>`).join('')
+    : '<tr><td colspan="5">No UAC2 functions found</td></tr>';
+}
+
+function applyMeters(meters) {
+  for (const device of meters.devices) {
+    const meter = document.querySelector(`[data-meter="output-${device.number}"]`);
+    paintMeter(meter, device.peakDbfs, device.rmsDbfs);
+    const ducked = meter.querySelector('.meter-ducked');
+    const triggerSources = config?.ducking?.triggerSources || [config?.ducking?.priorityDevice];
+    const showDucked = meters.duckingActive && !triggerSources.includes(device.number);
+    ducked.hidden = !showDucked;
+    if (showDucked) {
+      const duckedPeak = device.peakDbfs - meters.duckGainReductionDb;
+      ducked.textContent = `${duckedPeak <= -119 ? '-∞' : duckedPeak.toFixed(1)} dBFS`;
+    }
+  }
+  paintMeter(document.querySelector('[data-meter="sidetone"]'), meters.sidetone.peakDbfs, meters.sidetone.rmsDbfs);
+  paintMeter(document.querySelector('[data-meter="ndi-return"]'), meters.ndiReceiver.peakDbfs, meters.ndiReceiver.rmsDbfs);
+  paintMeter(document.querySelector('[data-meter="mix"]'), meters.mix.peakDbfs, meters.mix.rmsDbfs);
+  const indicator = byId('duckIndicator');
+  indicator.className = `duck-indicator ${meters.duckingActive ? 'active' : ''}`;
+  indicator.textContent = meters.duckingActive
+    ? `DUCKING −${meters.duckGainReductionDb.toFixed(1)} dB`
+    : '0.0 dB reduction';
+}
+
+function applyNdiStatus(ndi) {
+  const status = byId('ndiStatus');
+  status.className = `ndi-status ${ndi.senderOnline ? 'online' : ''}`;
+  status.textContent = ndi.senderOnline
+    ? `Online · ${ndi.connections} receiver${ndi.connections === 1 ? '' : 's'}`
+    : (ndi.enabled ? 'Starting sender…' : 'Sender offline');
+  paintMeter(document.querySelector('[data-meter="ndi-mic"]'), ndi.peakDbfs, ndi.rmsDbfs);
+  byId('ndiDetails').textContent =
+    `Queue ${ndi.queueMilliseconds.toFixed(1)} ms · underruns ${ndi.underruns} · overruns ${ndi.overruns}`;
+
+  const receiverStatus = byId('ndiReceiverStatus');
+  receiverStatus.className = `ndi-status ${ndi.receiverConnected ? 'online' : ''}`;
+  receiverStatus.textContent = ndi.receiverConnected
+    ? 'Source connected'
+    : (ndi.receiverEnabled ? 'Finding source…' : 'Receiver offline');
+  paintMeter(
+    document.querySelector('[data-meter="ndi-receiver-native"]'),
+    ndi.receiverPeakDbfs,
+    ndi.receiverRmsDbfs);
+  byId('ndiReceiverDetails').textContent =
+    `Queue ${ndi.receiverQueueMilliseconds.toFixed(1)} ms · underruns ${ndi.receiverUnderruns} · overruns ${ndi.receiverOverruns}`;
+}
+
+function applyControlState(state) {
+  if (!state?.configuration) return;
+  config = state.configuration;
+  for (const card of document.querySelectorAll('.device')) {
+    const device = config.devices.find(value => value.number === Number(card.dataset.number));
+    if (!device) continue;
+    paintRouteButton(card.querySelector('[data-kind="input"]'), device.inputEnabled);
+    paintRouteButton(card.querySelector('[data-kind="output"]'), device.outputEnabled);
+    paintSoloButton(card.querySelector('[data-kind="solo"]'), device.outputSolo);
+    const inputGain = card.querySelector('.input-gain');
+    const outputGain = card.querySelector('.output-gain');
+    updateInputUnlessActive(inputGain, Math.round(device.inputGain * 100));
+    updateInputUnlessActive(outputGain, Math.round(device.outputGain * 100));
+    inputGain.closest('[data-gain-control]').querySelector('.gain-value').textContent = `${Math.round(device.inputGain * 100)}%`;
+    outputGain.closest('[data-gain-control]').querySelector('.gain-value').textContent = `${Math.round(device.outputGain * 100)}%`;
+  }
+  updateInputUnlessActive(byId('masterGain'), Math.round(config.physicalPlaybackGain * 100));
+  byId('masterGainValue').textContent = `${Math.round(config.physicalPlaybackGain * 100)}%`;
+  paintDucking();
+  paintNdiConfiguration();
+}
+
+function startEventStream() {
+  if (eventSource) return;
+  eventSource = new EventSource('/api/events');
+  eventSource.addEventListener('state', event => {
+    applyControlState(JSON.parse(event.data));
+  });
+  eventSource.addEventListener('meters', event => {
+    applyMeters(JSON.parse(event.data));
+  });
+  eventSource.addEventListener('ndi', event => {
+    applyNdiStatus(JSON.parse(event.data));
+  });
+  eventSource.addEventListener('ndi-sources', event => {
+    applyNdiSources(JSON.parse(event.data));
+  });
+}
+
+function renderDevices() {
+  byId('channelDevices').innerHTML = config.devices.sort((a, b) => a.number - b.number).map(device => `
+    <div class="device" data-number="${device.number}">
+      <div class="strip-title"><h3>USB Audio ${device.number}</h3><span class="strip-number">${device.number}</span></div>
+      <div class="strip-buttons">
+        <button type="button" class="route-toggle ${device.inputEnabled ? 'on' : 'off'}" data-kind="input"
+          aria-pressed="${device.inputEnabled}"><span>Mic feed</span><strong>${device.inputEnabled ? 'ON' : 'MUTED'}</strong></button>
+        <button type="button" class="route-toggle ${device.outputEnabled ? 'on' : 'off'}" data-kind="output"
+          aria-pressed="${device.outputEnabled}"><span>Output mix</span><strong>${device.outputEnabled ? 'ON' : 'MUTED'}</strong></button>
+        <button type="button" class="solo-toggle ${device.outputSolo ? 'on' : 'off'}" data-kind="solo"
+          aria-pressed="${device.outputSolo}"><span>Solo</span><strong>${device.outputSolo ? 'ACTIVE' : 'OFF'}</strong></button>
+      </div>
+      <div class="strip-body">
+        <label class="fader-control" data-gain-control>
+          <span>Mic send</span>
+          <div class="fader-wrap" style="--detent-top: calc(33.333% + 3px)">
+            <input class="input-gain fader" type="range" min="0" max="150" step="1" value="${Math.round(device.inputGain * 100)}">
+            <span class="detent-mark" aria-hidden="true"></span>
+          </div>
+          <span class="gain-value">${Math.round(device.inputGain * 100)}%</span>
+        </label>
+        <label class="fader-control" data-gain-control>
+          <span>Output</span>
+          <div class="fader-wrap" style="--detent-top: calc(33.333% + 3px)">
+            <input class="output-gain fader" type="range" min="0" max="150" step="1" value="${Math.round(device.outputGain * 100)}">
+            <span class="detent-mark" aria-hidden="true"></span>
+          </div>
+          <span class="gain-value">${Math.round(device.outputGain * 100)}%</span>
+        </label>
+        <div class="meter vertical" data-meter="output-${device.number}">
+          <span class="meter-name">OUT</span>
+          <div class="meter-track"><span class="meter-fill"></span></div>
+          <span class="meter-value">-∞ dBFS</span>
+          <span class="meter-ducked" title="Ducked level" hidden>-∞ dBFS</span>
+        </div>
+      </div>
+    </div>`).join('');
+  document.querySelectorAll('.route-toggle').forEach(button => {
+    const device = config.devices.find(value =>
+      value.number === Number(button.closest('.device').dataset.number));
+    paintRouteButton(button, button.dataset.kind === 'input' ? device.inputEnabled : device.outputEnabled);
+    button.addEventListener('click', () => toggleRoute(button));
+  });
+  document.querySelectorAll('.solo-toggle').forEach(button => {
+    paintSoloButton(button, button.getAttribute('aria-pressed') === 'true');
+    button.addEventListener('click', () => toggleSolo(button));
+  });
+  document.querySelectorAll('#channelDevices .device').forEach(card => {
+    const number = Number(card.dataset.number);
+    const device = config.devices.find(value => value.number === number);
+    bindGainSlider(card.querySelector('.input-gain'), `mic-${number}`, `/api/mics/${number}/gain`,
+      value => { device.inputGain = value; });
+    bindGainSlider(card.querySelector('.output-gain'), `output-${number}`, `/api/outputs/${number}/gain`,
+      value => { device.outputGain = value; });
+  });
+}
+
+function refreshChannels() {
+  fillChannelSelect(byId('captureChannel'), selectedNode(byId('captureNode')), config.physicalCaptureChannel);
+  const playback = selectedNode(byId('playbackNode'));
+  fillChannelSelect(byId('playbackLeft'), playback, config.physicalPlaybackLeftChannel);
+  fillChannelSelect(byId('playbackRight'), playback, config.physicalPlaybackRightChannel);
+}
+
+async function load() {
+  try {
+    const [state, nodeList, gadget, discoveredNdiSources] = await Promise.all([
+      request('/api/state'), request('/api/nodes'), request('/api/gadget'), request('/api/ndi/sources')
+    ]);
+    config = state.configuration;
+    nodes = nodeList;
+    ndiSources = discoveredNdiSources.sources || [];
+    fillNodeSelect(byId('captureNode'), 'Audio/Source', config.physicalCaptureNode);
+    fillNodeSelect(byId('playbackNode'), 'Audio/Sink', config.physicalPlaybackNode);
+    byId('masterGain').value = Math.round(config.physicalPlaybackGain * 100);
+    byId('masterGainValue').textContent = `${byId('masterGain').value}%`;
+    refreshChannels();
+    renderDevices();
+    applyControlState(state);
+    paintGadget(gadget);
+    startEventStream();
+  } catch (error) {
+    byId('message').textContent = error.message;
+  }
+}
+
+async function loadStatus() {
+  try {
+    applyControlState(await request('/api/state'));
+  } catch (error) {
+    byId('message').textContent = error.message;
+  }
+}
+
+byId('captureNode').addEventListener('change', refreshChannels);
+byId('playbackNode').addEventListener('change', refreshChannels);
+bindGainSlider(byId('masterGain'), 'master', '/api/master/gain',
+  value => { config.physicalPlaybackGain = value; });
+bindGainSlider(byId('sidetoneGain'), 'sidetone', '/api/sidetone/gain',
+  value => { config.sidetone.gain = value; });
+bindGainSlider(byId('ndiReceiverGain'), 'ndi-receiver', '/api/ndi/receiver/gain',
+  value => { config.ndiReceiver.gain = value; });
+
+byId('sidetoneToggle').addEventListener('click', async () => {
+  const endpoint = config.sidetone.enabled ? '/api/sidetone/mute' : '/api/sidetone/unmute';
+  try {
+    const result = await request(endpoint, { method: 'POST' });
+    applyControlState(result);
+    reportControlResult(result, `Sidetone ${config.sidetone.enabled ? 'enabled' : 'muted'}.`);
+  } catch (error) {
+    byId('message').textContent = error.message;
+  }
+});
+
+async function toggleNdiReceiver() {
+  const endpoint = config.ndiReceiver.enabled ? '/api/ndi/receiver/disable' : '/api/ndi/receiver/enable';
+  try {
+    const result = await request(endpoint, { method: 'POST' });
+    applyControlState(result);
+    reportControlResult(result, `NDI receiver ${config.ndiReceiver.enabled ? 'enabled' : 'disabled'}.`);
+  } catch (error) {
+    byId('message').textContent = error.message;
+  }
+}
+byId('ndiReceiverToggle').addEventListener('click', toggleNdiReceiver);
+byId('ndiReceiverPanelToggle').addEventListener('click', toggleNdiReceiver);
+byId('ndiReceiverSource').addEventListener('change', async event => {
+  const name = event.target.value;
+  try {
+    const result = await request(`/api/ndi/receiver/source?name=${encodeURIComponent(name)}`, {
+      method: 'POST'
+    });
+    applyControlState(result);
+    reportControlResult(result, name ? `NDI receiver source set to ${name}.` : 'NDI receiver source cleared.');
+  } catch (error) {
+    fillNdiSourceSelect();
+    byId('message').textContent = error.message;
+  }
+});
+byId('duckToggle').addEventListener('click', async () => {
+  const endpoint = config.ducking.enabled ? '/api/ducking/bypass' : '/api/ducking/enable';
+  try {
+    const result = await request(endpoint, { method: 'POST' });
+    applyControlState(result);
+    reportControlResult(result, `Ducking ${config.ducking.enabled ? 'enabled' : 'bypassed'}.`);
+  } catch (error) {
+    byId('message').textContent = error.message;
+  }
+});
+byId('ndiToggle').addEventListener('click', async () => {
+  const endpoint = config.ndiAudio.enabled ? '/api/ndi/disable' : '/api/ndi/enable';
+  try {
+    const result = await request(endpoint, { method: 'POST' });
+    applyControlState(result);
+    reportControlResult(result, `NDI audio ${config.ndiAudio.enabled ? 'enabled' : 'disabled'}.`);
+  } catch (error) {
+    byId('message').textContent = error.message;
+  }
+});
+byId('ndiName').addEventListener('change', async event => {
+  const name = event.target.value.trim();
+  if (!name) {
+    event.target.value = config.ndiAudio.sourceName;
+    byId('message').textContent = 'NDI source name cannot be empty.';
+    return;
+  }
+  try {
+    const result = await request(`/api/ndi/name?name=${encodeURIComponent(name)}`, { method: 'POST' });
+    applyControlState(result);
+    reportControlResult(result, `NDI source renamed to ${name}.`);
+  } catch (error) {
+    event.target.value = config.ndiAudio.sourceName;
+    byId('message').textContent = error.message;
+  }
+});
+byId('ndiName').addEventListener('keydown', event => {
+  if (event.key === 'Enter')
+    event.target.blur();
+});
+document.querySelectorAll('.tab-button').forEach(button => {
+  button.addEventListener('click', () => {
+    document.querySelectorAll('.tab-button').forEach(value =>
+      value.classList.toggle('active', value === button));
+    document.querySelectorAll('.tab-panel').forEach(panel =>
+      panel.classList.toggle('active', panel.id === `tab-${button.dataset.tab}`));
+  });
+});
+document.querySelectorAll('.trigger-toggle').forEach(button => {
+  button.addEventListener('click', async () => {
+    const source = Number(button.dataset.source);
+    const triggers = config.ducking.triggerSources || [config.ducking.priorityDevice];
+    const enabled = triggers.includes(source);
+    if (enabled && triggers.length === 1) {
+      byId('message').textContent = 'At least one ducking trigger must remain selected.';
+      return;
+    }
+    try {
+      const result = await request(
+        `/api/ducking/triggers/${source}/${enabled ? 'disable' : 'enable'}`,
+        { method: 'POST' });
+      applyControlState(result);
+      reportControlResult(result, `${source === 0 ? 'Self' : `Output ${source}`} trigger ${enabled ? 'disabled' : 'enabled'}.`);
+    } catch (error) {
+      byId('message').textContent = error.message;
+    }
+  });
+});
+bindDuckingSlider('duckThreshold', 'threshold', '/api/ducking/threshold', 'dbfs', 'thresholdDbfs', 'dBFS');
+bindDuckingSlider('duckDepth', 'depth', '/api/ducking/depth', 'db', 'depthDb', 'dB');
+bindDuckingSlider('duckAttack', 'attack', '/api/ducking/attack', 'milliseconds', 'attackMilliseconds', 'ms');
+bindDuckingSlider('duckHold', 'hold', '/api/ducking/hold', 'milliseconds', 'holdMilliseconds', 'ms');
+bindDuckingSlider('duckRelease', 'release', '/api/ducking/release', 'milliseconds', 'releaseMilliseconds', 'ms');
+byId('refresh').addEventListener('click', load);
+byId('save').addEventListener('click', async () => {
+  const button = byId('save');
+  const mappings = {
+    physicalCaptureNode: byId('captureNode').value,
+    physicalCaptureChannel: byId('captureChannel').value,
+    physicalPlaybackNode: byId('playbackNode').value,
+    physicalPlaybackLeftChannel: byId('playbackLeft').value,
+    physicalPlaybackRightChannel: byId('playbackRight').value
+  };
+  button.disabled = true;
+  try {
+    const result = await request('/api/mappings', {
+      method: 'PUT', headers: {'content-type':'application/json'}, body: JSON.stringify(mappings)
+    });
+    applyControlState(result);
+    reportControlResult(result, 'Device and channel mappings saved and applied.');
+  } catch (error) {
+    byId('message').textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+load();
+</script>
+</body>
+</html>

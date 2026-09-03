@@ -1,0 +1,15 @@
+[Unit]
+Description=Four-function USB Audio Class 2 gadget
+After=systemd-modules-load.service sys-kernel-config.mount
+Before=sound.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=-/etc/default/pi-usb-audio
+ExecStart=/usr/local/sbin/pi-usb-audio-gadget --start
+ExecStop=/usr/local/sbin/pi-usb-audio-gadget --stop
+
+[Install]
+WantedBy=multi-user.target
+

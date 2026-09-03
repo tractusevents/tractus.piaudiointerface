@@ -1,0 +1,230 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly CONFIGFS_ROOT=/sys/kernel/config
+readonly GADGET_ROOT="$CONFIGFS_ROOT/usb_gadget"
+
+if [[ -r /etc/default/pi-usb-audio ]]; then
+    # shellcheck source=/dev/null
+    source /etc/default/pi-usb-audio
+fi
+
+: "${USB_VENDOR_ID:=0x1d6b}"
+: "${USB_PRODUCT_ID:=0x0104}"
+: "${USB_BCD_DEVICE:=0x0100}"
+: "${USB_MANUFACTURER:=Tractus}"
+: "${USB_PRODUCT:=Tractus USB Audio Matrix}"
+: "${USB_SERIAL:=}"
+: "${USB_SERIAL_SUFFIX:=}"
+: "${GADGET_NAME:=pi-usb-audio}"
+: "${GADGET_COUNT:=4}"
+: "${SAMPLE_RATE:=48000}"
+: "${PLAYBACK_SAMPLE_SIZE_BYTES:=${SAMPLE_SIZE_BYTES:-3}}"
+: "${CAPTURE_SAMPLE_SIZE_BYTES:=${SAMPLE_SIZE_BYTES:-3}}"
+: "${REQUEST_COUNT:=64}"
+: "${CAPTURE_SYNC:=adaptive}"
+
+readonly GADGET="$GADGET_ROOT/$GADGET_NAME"
+
+log() {
+    printf 'pi-usb-audio-gadget: %s\n' "$*"
+}
+
+die() {
+    log "ERROR: $*" >&2
+    exit 1
+}
+
+require_root() {
+    [[ ${EUID:-$(id -u)} -eq 0 ]] || die "must run as root"
+}
+
+write_attr() {
+    local path=$1
+    local value=$2
+    [[ -e "$path" ]] || die "kernel is missing required UAC2 attribute: $path"
+    printf '%s' "$value" >"$path"
+}
+
+write_optional_attr() {
+    local path=$1
+    local value=$2
+    if [[ -e "$path" ]]; then
+        printf '%s' "$value" >"$path"
+    fi
+}
+
+derived_serial() {
+    local serial
+    serial=$(awk -F ': ' '/^Serial[[:space:]]*:/ { print $2; exit }' /proc/cpuinfo 2>/dev/null || true)
+    if [[ -z "$serial" ]]; then
+        serial=$(cat /etc/machine-id 2>/dev/null || true)
+    fi
+    printf '%s' "${serial:-pi-usb-audio}"
+}
+
+unbind_gadget() {
+    if [[ -e "$GADGET/UDC" ]]; then
+        printf '' >"$GADGET/UDC" || true
+    fi
+}
+
+remove_gadget() {
+    local index function_path link_path
+
+    [[ -d "$GADGET" ]] || return 0
+    unbind_gadget
+
+    [[ -L "$GADGET/configs/c.1/acm.control" ]] && rm "$GADGET/configs/c.1/acm.control"
+
+    for ((index = GADGET_COUNT; index >= 1; index--)); do
+        link_path="$GADGET/configs/c.1/uac2.device$index"
+        [[ -L "$link_path" ]] && rm "$link_path"
+    done
+
+    rmdir "$GADGET/functions/acm.control" 2>/dev/null || true
+
+    rmdir "$GADGET/configs/c.1/strings/0x409" 2>/dev/null || true
+    rmdir "$GADGET/configs/c.1" 2>/dev/null || true
+
+    for ((index = GADGET_COUNT; index >= 1; index--)); do
+        function_path="$GADGET/functions/uac2.device$index"
+        rmdir "$function_path" 2>/dev/null || true
+    done
+
+    rmdir "$GADGET/strings/0x409" 2>/dev/null || true
+    rmdir "$GADGET" 2>/dev/null || true
+
+    if [[ -d "$GADGET" ]]; then
+        die "could not remove existing gadget at $GADGET; unbind it and inspect ConfigFS"
+    fi
+}
+
+create_function() {
+    local index=$1
+    local function_path="$GADGET/functions/uac2.device$index"
+
+    mkdir "$function_path"
+
+    # f_uac2 names are from the Pi/ALSA side:
+    # p_* is sent by the Pi and appears as a host recording input.
+    # c_* is received by the Pi and appears as a host playback output.
+    write_attr "$function_path/p_chmask" 0x1
+    write_attr "$function_path/c_chmask" 0x3
+    write_attr "$function_path/p_srate" "$SAMPLE_RATE"
+    write_attr "$function_path/c_srate" "$SAMPLE_RATE"
+    write_attr "$function_path/p_ssize" "$PLAYBACK_SAMPLE_SIZE_BYTES"
+    write_attr "$function_path/c_ssize" "$CAPTURE_SAMPLE_SIZE_BYTES"
+
+    # Four asynchronous OUT functions would require four feedback IN
+    # endpoints in addition to the four microphone IN endpoints. The Pi 4
+    # does not have enough IN endpoints for that layout, so OUT is adaptive.
+    write_attr "$function_path/c_sync" "$CAPTURE_SYNC"
+
+    # USB Feature Units allocate interrupt IN endpoints. Gain/mute are done
+    # in PipeWire instead so four full-duplex functions fit the controller.
+    write_attr "$function_path/p_mute_present" 0
+    write_attr "$function_path/p_volume_present" 0
+    write_attr "$function_path/c_mute_present" 0
+    write_attr "$function_path/c_volume_present" 0
+
+    write_optional_attr "$function_path/req_number" "$REQUEST_COUNT"
+    write_optional_attr "$function_path/function_name" "Tractus USB Audio $index"
+    write_optional_attr "$function_path/p_it_name" "Tractus USB Audio In $index"
+    write_optional_attr "$function_path/p_it_ch_name" "Tractus USB Audio In $index"
+    write_optional_attr "$function_path/p_ot_name" "Tractus USB Audio In $index"
+    write_optional_attr "$function_path/c_it_name" "Tractus USB Audio Out $index"
+    write_optional_attr "$function_path/c_it_ch_name" "Tractus USB Audio Out $index"
+    write_optional_attr "$function_path/c_ot_name" "Tractus USB Audio Out $index"
+
+    ln -s "$function_path" \
+        "$GADGET/configs/c.1/uac2.device$index"
+}
+
+start_gadget() {
+    local index udc serial
+
+    modprobe libcomposite
+    modprobe usb_f_uac2
+    modprobe usb_f_acm
+
+    if ! mountpoint -q "$CONFIGFS_ROOT"; then
+        mount -t configfs none "$CONFIGFS_ROOT"
+    fi
+    mkdir -p "$GADGET_ROOT"
+
+    remove_gadget
+    mkdir "$GADGET"
+    trap 'unbind_gadget' ERR
+
+    write_attr "$GADGET/idVendor" "$USB_VENDOR_ID"
+    write_attr "$GADGET/idProduct" "$USB_PRODUCT_ID"
+    write_attr "$GADGET/bcdUSB" 0x0200
+    write_attr "$GADGET/bcdDevice" "$USB_BCD_DEVICE"
+
+    # Miscellaneous/Common/IAD tells hosts to split the four Interface
+    # Association Descriptor groups as separate USB audio functions.
+    write_attr "$GADGET/bDeviceClass" 0xEF
+    write_attr "$GADGET/bDeviceSubClass" 0x02
+    write_attr "$GADGET/bDeviceProtocol" 0x01
+
+    mkdir "$GADGET/strings/0x409"
+    serial="${USB_SERIAL:-$(derived_serial)}${USB_SERIAL_SUFFIX}"
+    write_attr "$GADGET/strings/0x409/serialnumber" "$serial"
+    write_attr "$GADGET/strings/0x409/manufacturer" "$USB_MANUFACTURER"
+    write_attr "$GADGET/strings/0x409/product" "$USB_PRODUCT"
+
+    mkdir "$GADGET/configs/c.1"
+    mkdir "$GADGET/configs/c.1/strings/0x409"
+    write_attr "$GADGET/configs/c.1/strings/0x409/configuration" \
+        "4x mono input + 4x stereo output"
+    write_attr "$GADGET/configs/c.1/bmAttributes" 0x80
+    write_attr "$GADGET/configs/c.1/MaxPower" 500
+
+    for ((index = 1; index <= GADGET_COUNT; index++)); do
+        create_function "$index"
+    done
+
+
+    # CDC ACM adds a driverless command/feedback channel (COM port on
+    # Windows, /dev/cu.usbmodem* on macOS). Four UAC2 functions plus ACM
+    # remain within the Pi 4 DWC2 endpoint budget.
+    mkdir "$GADGET/functions/acm.control"
+    ln -s "$GADGET/functions/acm.control" "$GADGET/configs/c.1/acm.control"
+
+    udc=$(find /sys/class/udc -mindepth 1 -maxdepth 1 -printf '%f\n' | sort | head -n 1)
+    [[ -n "$udc" ]] || die "no USB Device Controller found; add dtoverlay=dwc2,dr_mode=peripheral and reboot"
+
+    write_attr "$GADGET/UDC" "$udc"
+    for _ in {1..20}; do
+        [[ -e /dev/ttyGS0 ]] && break
+        sleep 0.05
+    done
+    if [[ -e /dev/ttyGS0 ]]; then
+        stty -F /dev/ttyGS0 raw -echo 2>/dev/null || true
+        if getent group dialout >/dev/null; then
+            chgrp dialout /dev/ttyGS0
+            chmod 660 /dev/ttyGS0
+        fi
+    fi
+    trap - ERR
+    log "bound $GADGET_COUNT UAC2 functions to $udc"
+}
+
+require_root
+case "${1:---start}" in
+    --start)
+        start_gadget
+        ;;
+    --stop)
+        remove_gadget
+        log "gadget stopped"
+        ;;
+    --restart)
+        remove_gadget
+        start_gadget
+        ;;
+    *)
+        die "usage: $0 [--start|--stop|--restart]"
+        ;;
+esac

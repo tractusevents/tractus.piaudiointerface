@@ -1,0 +1,108 @@
+[
+  { "id": 1, "type": "PipeWire:Interface:Node", "info": { "props": {
+    "node.name": "alsa_input.usb.example", "node.description": "Example USB Capture",
+    "media.class": "Audio/Source", "api.alsa.card": 1 } } },
+  { "id": 2, "type": "PipeWire:Interface:Node", "info": { "props": {
+    "node.name": "alsa_output.usb.example", "node.description": "Example USB Playback",
+    "media.class": "Audio/Sink", "api.alsa.card": 1 } } },
+  { "id": 101, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 1, "port.direction": "out", "port.name": "capture_FL", "audio.channel": "FL" } } },
+  { "id": 102, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 1, "port.direction": "out", "port.name": "capture_FR", "audio.channel": "FR" } } },
+  { "id": 201, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 2, "port.direction": "in", "port.name": "playback_FL", "audio.channel": "FL" } } },
+  { "id": 202, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 2, "port.direction": "in", "port.name": "playback_FR", "audio.channel": "FR" } } },
+
+  { "id": 50, "type": "PipeWire:Interface:Node", "info": { "props": {
+    "node.name": "tractus_audio_dsp", "node.description": "Tractus Audio DSP Mixer",
+    "media.class": "Audio/Filter" } } },
+  { "id": 5001, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 50, "port.direction": "in", "port.name": "input_1_FL", "audio.channel": "FL" } } },
+  { "id": 5002, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 50, "port.direction": "in", "port.name": "input_1_FR", "audio.channel": "FR" } } },
+  { "id": 5003, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 50, "port.direction": "in", "port.name": "input_2_FL", "audio.channel": "FL" } } },
+  { "id": 5004, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 50, "port.direction": "in", "port.name": "input_2_FR", "audio.channel": "FR" } } },
+  { "id": 5005, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 50, "port.direction": "in", "port.name": "input_3_FL", "audio.channel": "FL" } } },
+  { "id": 5006, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 50, "port.direction": "in", "port.name": "input_3_FR", "audio.channel": "FR" } } },
+  { "id": 5007, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 50, "port.direction": "in", "port.name": "input_4_FL", "audio.channel": "FL" } } },
+  { "id": 5008, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 50, "port.direction": "in", "port.name": "input_4_FR", "audio.channel": "FR" } } },
+  { "id": 5011, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 50, "port.direction": "in", "port.name": "input_sidetone_MONO", "audio.channel": "MONO" } } },
+  { "id": 5012, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 50, "port.direction": "in", "port.name": "input_ndi_FL", "audio.channel": "FL" } } },
+  { "id": 5013, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 50, "port.direction": "in", "port.name": "input_ndi_FR", "audio.channel": "FR" } } },
+  { "id": 5009, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 50, "port.direction": "out", "port.name": "output_FL", "audio.channel": "FL" } } },
+  { "id": 5010, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 50, "port.direction": "out", "port.name": "output_FR", "audio.channel": "FR" } } },
+
+  { "id": 51, "type": "PipeWire:Interface:Node", "info": { "props": {
+    "node.name": "tractus_ndi_audio", "node.description": "Tractus NDI Audio Sender",
+    "media.class": "Audio/Filter" } } },
+  { "id": 5101, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 51, "port.direction": "in", "port.name": "input_MONO", "audio.channel": "MONO" } } },
+  { "id": 5102, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 51, "port.direction": "out", "port.name": "output_FL", "audio.channel": "FL" } } },
+  { "id": 5103, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 51, "port.direction": "out", "port.name": "output_FR", "audio.channel": "FR" } } },
+
+  { "id": 10, "type": "PipeWire:Interface:Node", "info": { "props": {
+    "node.name": "alsa_output.platform.uac2_1", "node.description": "UAC2_Gadget",
+    "media.class": "Audio/Sink", "api.alsa.card": 10 } } },
+  { "id": 11, "type": "PipeWire:Interface:Node", "info": { "props": {
+    "node.name": "alsa_input.platform.uac2_1", "node.description": "UAC2_Gadget",
+    "media.class": "Audio/Source", "api.alsa.card": 10 } } },
+  { "id": 1001, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 10, "port.direction": "in", "port.name": "playback_FL", "audio.channel": "FL" } } },
+  { "id": 1101, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 11, "port.direction": "out", "port.name": "capture_FL", "audio.channel": "FL" } } },
+  { "id": 1102, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 11, "port.direction": "out", "port.name": "capture_FR", "audio.channel": "FR" } } },
+
+  { "id": 20, "type": "PipeWire:Interface:Node", "info": { "props": {
+    "node.name": "alsa_output.platform.uac2_2", "node.description": "UAC2_Gadget",
+    "media.class": "Audio/Sink", "api.alsa.card": 11 } } },
+  { "id": 21, "type": "PipeWire:Interface:Node", "info": { "props": {
+    "node.name": "alsa_input.platform.uac2_2", "node.description": "UAC2_Gadget",
+    "media.class": "Audio/Source", "api.alsa.card": 11 } } },
+  { "id": 2001, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 20, "port.direction": "in", "port.name": "playback_FL", "audio.channel": "FL" } } },
+  { "id": 2101, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 21, "port.direction": "out", "port.name": "capture_FL", "audio.channel": "FL" } } },
+  { "id": 2102, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 21, "port.direction": "out", "port.name": "capture_FR", "audio.channel": "FR" } } },
+
+  { "id": 30, "type": "PipeWire:Interface:Node", "info": { "props": {
+    "node.name": "alsa_output.platform.uac2_3", "node.description": "UAC2_Gadget",
+    "media.class": "Audio/Sink", "api.alsa.card": 12 } } },
+  { "id": 31, "type": "PipeWire:Interface:Node", "info": { "props": {
+    "node.name": "alsa_input.platform.uac2_3", "node.description": "UAC2_Gadget",
+    "media.class": "Audio/Source", "api.alsa.card": 12 } } },
+  { "id": 3001, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 30, "port.direction": "in", "port.name": "playback_FL", "audio.channel": "FL" } } },
+  { "id": 3101, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 31, "port.direction": "out", "port.name": "capture_FL", "audio.channel": "FL" } } },
+  { "id": 3102, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 31, "port.direction": "out", "port.name": "capture_FR", "audio.channel": "FR" } } },
+
+  { "id": 40, "type": "PipeWire:Interface:Node", "info": { "props": {
+    "node.name": "alsa_output.platform.uac2_4", "node.description": "UAC2_Gadget",
+    "media.class": "Audio/Sink", "api.alsa.card": 13 } } },
+  { "id": 41, "type": "PipeWire:Interface:Node", "info": { "props": {
+    "node.name": "alsa_input.platform.uac2_4", "node.description": "UAC2_Gadget",
+    "media.class": "Audio/Source", "api.alsa.card": 13 } } },
+  { "id": 4001, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 40, "port.direction": "in", "port.name": "playback_FL", "audio.channel": "FL" } } },
+  { "id": 4101, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 41, "port.direction": "out", "port.name": "capture_FL", "audio.channel": "FL" } } },
+  { "id": 4102, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 41, "port.direction": "out", "port.name": "capture_FR", "audio.channel": "FR" } } }
+]

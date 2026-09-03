@@ -1,0 +1,53 @@
+# .NET build and publish output
+**/bin/
+**/obj/
+artifacts/
+publish/
+TestResults/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Native build output
+build/
+out/
+dist/
+cmake-build-*/
+*.o
+*.obj
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+
+# NDI SDK materials are obtained separately and must not be vendored
+ndi63asdk/
+ndi63bsdk/
+Processing.NDI.*.h
+libndi*.so*
+
+# Local environment and machine-specific overrides
+.env
+.env.*
+!.env.example
+*.local.json
+
+# Runtime and diagnostic output
+*.log
+*.pid
+*.sock
+core
+core.*
+
+# Editor and operating-system files
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db

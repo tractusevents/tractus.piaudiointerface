@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+set -u
+
+section() {
+    printf '\n[%s]\n' "$1"
+}
+
+section "Board"
+tr '\0' '\n' </proc/device-tree/model 2>/dev/null || printf 'Unknown\n'
+uname -a
+
+section "Power/throttling"
+if command -v vcgencmd >/dev/null 2>&1; then
+    vcgencmd get_throttled || true
+    vcgencmd measure_volts core || true
+else
+    printf 'vcgencmd is not installed\n'
+fi
+
+section "USB device controllers"
+if [[ -d /sys/class/udc ]]; then
+    find /sys/class/udc -mindepth 1 -maxdepth 1 -printf '%f\n' 2>/dev/null || true
+fi
+if ! find /sys/class/udc -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null | grep -q .; then
+    printf 'NONE - DWC2 peripheral mode is not enabled, or the Pi has not rebooted.\n'
+fi
+
+section "Loaded gadget modules"
+lsmod 2>/dev/null | awk 'NR == 1 || /^(dwc2|libcomposite|usb_f_uac2|usb_f_acm|u_audio)[[:space:]]/' || true
+
+section "Configured gadget"
+gadget=/sys/kernel/config/usb_gadget/pi-usb-audio
+if [[ -d "$gadget" ]]; then
+    printf 'UDC: '
+    cat "$gadget/UDC" 2>/dev/null || true
+    find "$gadget/configs/c.1" -maxdepth 1 -type l -printf '%f -> %l\n' 2>/dev/null | sort
+    for function_path in "$gadget"/functions/uac2.device*; do
+        [[ -d "$function_path" ]] || continue
+        printf '%s: p_chmask=%s p_ssize=%s c_chmask=%s c_ssize=%s c_sync=%s req_number=%s\n' \
+            "$(basename "$function_path")" \
+            "$(cat "$function_path/p_chmask")" \
+            "$(cat "$function_path/p_ssize")" \
+            "$(cat "$function_path/c_chmask")" \
+            "$(cat "$function_path/c_ssize")" \
+            "$(cat "$function_path/c_sync")" \
+            "$(cat "$function_path/req_number" 2>/dev/null || printf '?')"
+    done
+else
+    printf 'Not configured\n'
+fi
+
+section "ALSA cards"
+cat /proc/asound/cards 2>/dev/null || printf 'No ALSA cards detected\n'
+
+section "USB host devices attached to Pi"
+if command -v lsusb >/dev/null 2>&1; then
+    lsusb
+    lsusb -t
+else
+    printf 'lsusb is not installed\n'
+fi
+
+section "PipeWire"
+if command -v pw-cli >/dev/null 2>&1; then
+    pipewire_user=${SUDO_USER:-${PI_USB_AUDIO_USER:-tractus}}
+    if getent passwd "$pipewire_user" >/dev/null; then
+        pipewire_uid=$(id -u "$pipewire_user")
+        runuser -u "$pipewire_user" -- env \
+            HOME="$(getent passwd "$pipewire_user" | cut -d: -f6)" \
+            XDG_RUNTIME_DIR="/run/user/$pipewire_uid" \
+            DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$pipewire_uid/bus" \
+            pw-cli info 0 2>&1 || true
+    else
+        printf 'Control user %s does not exist\n' "$pipewire_user"
+    fi
+else
+    printf 'PipeWire tools are not installed\n'
+fi
+
+section "USB serial control"
+ls -l /dev/ttyGS0 2>/dev/null || printf 'Not present\n'
+
+section "Tractus DSP mixer"
+control_user=${SUDO_USER:-${PI_USB_AUDIO_USER:-tractus}}
+if getent passwd "$control_user" >/dev/null; then
+    control_uid=$(id -u "$control_user")
+    ls -l "/run/user/$control_uid/tractus-audio-dsp.sock" 2>/dev/null || printf 'DSP socket not present\n'
+    runuser -u "$control_user" -- env \
+        HOME="$(getent passwd "$control_user" | cut -d: -f6)" \
+        XDG_RUNTIME_DIR="/run/user/$control_uid" \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$control_uid/bus" \
+        systemctl --user --no-pager --full status tractus-audio-dsp.service 2>&1 || true
+    runuser -u "$control_user" -- env \
+        XDG_RUNTIME_DIR="/run/user/$control_uid" \
+        pw-link -l 2>/dev/null | grep -A10 -B2 tractus_audio_dsp || true
+fi
+
+section "Tractus NDI audio sender"
+if getent passwd "$control_user" >/dev/null; then
+    control_home=$(getent passwd "$control_user" | cut -d: -f6)
+    ndi_library="$control_home/ndi63bsdk/lib/aarch64-rpi4-linux-gnueabi/libndi.so.6"
+    if [[ -e "$ndi_library" ]]; then
+        ls -l "$ndi_library"
+    else
+        printf 'NDI runtime not found at %s\n' "$ndi_library"
+    fi
+    ls -l "/run/user/$control_uid/tractus-ndi-audio.sock" 2>/dev/null || printf 'NDI control socket not present\n'
+    runuser -u "$control_user" -- env \
+        HOME="$control_home" \
+        XDG_RUNTIME_DIR="/run/user/$control_uid" \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$control_uid/bus" \
+        systemctl --user --no-pager --full status tractus-ndi-audio.service 2>&1 || true
+    runuser -u "$control_user" -- env \
+        XDG_RUNTIME_DIR="/run/user/$control_uid" \
+        pw-link -l 2>/dev/null | grep -A6 -B2 tractus_ndi_audio || true
+fi
+
+section "Recent kernel USB/audio messages"
+dmesg 2>/dev/null | grep -Ei 'dwc2|configfs-gadget|uac2|u_audio|snd|usb|xrun|underrun|overrun|undervoltage|voltage' | tail -n 120 || \
+    printf 'Kernel log is unavailable to this user\n'

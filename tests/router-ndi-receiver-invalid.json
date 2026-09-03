@@ -1,0 +1,13 @@
+{
+  "gadgetMatch": "UAC2 Gadget",
+  "physicalCaptureNode": "alsa_input.usb.example",
+  "physicalPlaybackNode": "alsa_output.usb.example",
+  "ndiAudio": { "enabled": false, "sourceName": "Tractus USB Audio Microphone" },
+  "ndiReceiver": { "enabled": true, "sourceName": "", "gain": 1.0 },
+  "devices": [
+    { "number": 1 },
+    { "number": 2 },
+    { "number": 3 },
+    { "number": 4 }
+  ]
+}

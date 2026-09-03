@@ -1,0 +1,1 @@
+SUBSYSTEM=="tty", KERNEL=="ttyGS*", GROUP="dialout", MODE="0660"

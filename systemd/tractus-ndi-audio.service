@@ -1,0 +1,17 @@
+[Unit]
+Description=Tractus NDI audio sender and receiver
+After=pipewire.service network-online.target
+Wants=network-online.target
+Requires=pipewire.service
+
+[Service]
+Type=simple
+Environment=TRACTUS_NDI_SOCKET=%t/tractus-ndi-audio.sock
+Environment=TRACTUS_NDI_LIBRARY=%h/ndi63bsdk/lib/aarch64-rpi4-linux-gnueabi/libndi.so.6
+ExecStart=/opt/pi-usb-audio/tractus-ndi-audio
+Restart=on-failure
+RestartSec=1
+TimeoutStopSec=5
+
+[Install]
+WantedBy=default.target
