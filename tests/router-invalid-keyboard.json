@@ -1,0 +1,30 @@
+{
+  "gadgetMatch": "UAC2 Gadget",
+  "keyboardControl": {
+    "enabled": true,
+    "deviceIds": ["/dev/input/event4"],
+    "gainStepPercent": 0,
+    "microphoneGainDevice": 5,
+    "channels": [
+      {
+        "number": 1,
+        "defaultEnabled": true,
+        "button": {
+          "deviceId": "/dev/input/event4",
+          "eventType": 2,
+          "code": 6,
+          "direction": 1
+        }
+      },
+      { "number": 2, "action": "toggleEventually" },
+      { "number": 3, "defaultEnabled": false },
+      { "number": 4, "defaultEnabled": false }
+    ]
+  },
+  "devices": [
+    { "number": 1 },
+    { "number": 2 },
+    { "number": 3 },
+    { "number": 4 }
+  ]
+}

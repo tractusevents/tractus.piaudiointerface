@@ -1,5 +1,7 @@
 namespace PiUsbAudio.Control;
 
+using System.Text;
+
 public sealed class RouterConfiguration
 {
     public string GadgetMatch { get; set; } = "UAC2 Gadget";
@@ -13,6 +15,7 @@ public sealed class RouterConfiguration
     public DuckingConfiguration Ducking { get; set; } = new();
     public NdiAudioConfiguration NdiAudio { get; set; } = new();
     public NdiReceiverConfiguration NdiReceiver { get; set; } = new();
+    public KeyboardControlConfiguration KeyboardControl { get; set; } = new();
     public int ReconcileIntervalSeconds { get; set; } = 10;
     public List<VirtualDeviceConfiguration> Devices { get; set; } =
     [
@@ -35,6 +38,7 @@ public sealed class RouterConfiguration
         errors.AddRange(Ducking.Validate());
         errors.AddRange(NdiAudio.Validate());
         errors.AddRange(NdiReceiver.Validate());
+        errors.AddRange(KeyboardControl.Validate());
         if (Devices.Count != 4)
             errors.Add("exactly four virtual devices must be configured");
         if (Devices.Select(device => device.Number).Distinct().Count() != Devices.Count)
@@ -43,6 +47,9 @@ public sealed class RouterConfiguration
         {
             if (device.Number is < 1 or > 4)
                 errors.Add($"virtual device number {device.Number} is outside 1-4");
+            var friendlyNameError = UsbChannelNames.ValidateFriendlyName(device.FriendlyName);
+            if (friendlyNameError is not null)
+                errors.Add($"device {device.Number} {friendlyNameError}");
             if (!double.IsFinite(device.OutputGain) || device.OutputGain is < 0 or > 1.5)
                 errors.Add($"device {device.Number} outputGain must be between 0.0 and 1.5");
             if (!double.IsFinite(device.InputGain) || device.InputGain is < 0 or > 1.5)
@@ -53,6 +60,10 @@ public sealed class RouterConfiguration
 
     public void Normalize()
     {
+        KeyboardControl ??= new KeyboardControlConfiguration();
+        KeyboardControl.Normalize();
+        foreach (var device in Devices)
+            device.FriendlyName = (device.FriendlyName ?? string.Empty).Trim();
         Ducking.TriggerSources ??= [];
         if (Ducking.TriggerSources.Count == 0)
             Ducking.TriggerSources.Add(Ducking.PriorityDevice);
@@ -114,11 +125,40 @@ public sealed class NdiReceiverConfiguration
 public sealed class VirtualDeviceConfiguration
 {
     public int Number { get; set; }
+    public string FriendlyName { get; set; } = string.Empty;
     public bool InputEnabled { get; set; } = true;
     public double InputGain { get; set; } = 1.0;
     public bool OutputEnabled { get; set; } = true;
     public double OutputGain { get; set; } = 1.0;
     public bool OutputSolo { get; set; }
+}
+
+public static class UsbChannelNames
+{
+    public const int MaxFriendlyNameUtf8Bytes = 64;
+
+    public static string DisplayName(VirtualDeviceConfiguration device) =>
+        string.IsNullOrWhiteSpace(device.FriendlyName)
+            ? $"USB Audio {device.Number}"
+            : device.FriendlyName;
+
+    public static string DescriptorName(VirtualDeviceConfiguration device)
+    {
+        var standardName = $"Tractus USB Audio {device.Number}";
+        return string.IsNullOrWhiteSpace(device.FriendlyName)
+            ? standardName
+            : $"{device.FriendlyName} ({standardName})";
+    }
+
+    public static string? ValidateFriendlyName(string? value)
+    {
+        value ??= string.Empty;
+        if (Encoding.UTF8.GetByteCount(value) > MaxFriendlyNameUtf8Bytes)
+            return $"friendlyName must be at most {MaxFriendlyNameUtf8Bytes} UTF-8 bytes";
+        if (value.Any(char.IsControl))
+            return "friendlyName must not contain control characters";
+        return null;
+    }
 }
 
 public sealed class DuckingConfiguration

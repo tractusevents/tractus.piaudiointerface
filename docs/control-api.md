@@ -45,7 +45,9 @@ Example response:
     "ducking", "multi-trigger-ducking", "self-ducking", "solo",
     "push-meters", "server-sent-events",
     "sidetone", "ndi-audio", "ndi-audio-receiver", "ndi-source-discovery",
-    "push-ndi-status", "push-ndi-sources", "usb-gadget-diagnostics"
+    "push-ndi-status", "push-ndi-sources", "usb-gadget-diagnostics",
+    "linux-input-controls", "user-input-mapping", "push-to-talk", "jog-volume",
+    "friendly-channel-names", "usb-descriptor-names", "usb-gadget-restart"
   ]
 }
 ```
@@ -82,6 +84,48 @@ HTTP 200 with the updated [control state](#control-state) as JSON.
 
 `100` is unity gain. Values above 100 provide digital gain and can clip when
 sources are summed.
+
+## Friendly channel names
+
+Each numbered duplex USB function can have a user-facing name. It is persisted
+immediately and returned as `devices[].friendlyName` in the configuration and
+control state.
+
+| Method | Path | Meaning |
+| --- | --- | --- |
+| `POST` | `/api/devices/{1-4}/name?name={UTF-8 name}` | Set a friendly name; an empty name restores the default |
+| `POST` | `/api/gadget/restart` | Re-enumerate the USB gadget and promptly restore audio routing |
+
+Names are trimmed, cannot contain control characters, and occupy at most 64
+UTF-8 bytes. The local UI uses the new name immediately. On the next Pi reboot
+or a call to `POST /api/gadget/restart`, the gadget advertises a name
+such as `To Teams (Tractus USB Audio 1)` in the UAC2 function and terminal
+strings. The restart disconnects all USB functions, so it should be done while
+host audio is idle.
+
+The web UI saves a name when Enter is pressed or the name field loses focus.
+**Apply USB Names Now** calls the restart endpoint after a disconnect warning.
+The installer grants the control-service user permission to restart exactly
+`pi-usb-audio-gadget.service`; it does not grant control over other units or
+accept a unit name from the API caller. A successful response has this shape:
+
+```json
+{
+  "success": true,
+  "busy": false,
+  "message": "USB names applied. The gadget reconnected and audio routing was restored.",
+  "gadget": { "configured": true, "bound": true, "healthy": true }
+}
+```
+
+Concurrent requests return HTTP 409. A system authorization or restart failure
+returns HTTP 503 with the same response shape and a diagnostic `message`.
+
+Custom name sets add a deterministic hash to the USB serial by default. This
+forces Windows to read the changed strings instead of reusing its cached audio
+endpoint names, but makes the renamed descriptor set a new Windows device
+instance. The operating system may prepend a localized role such as
+`Microphone` or `Speakers` when displaying it.
 
 When one or more outputs are soloed, only enabled members of the solo set are
 audible. Solo does not alter mute state or gain, and clearing all solos restores
@@ -249,6 +293,68 @@ Example request body:
 returns the updated control state. Node and port identifiers can be discovered
 with `GET /api/nodes`.
 
+## Keyboard and dial controls
+
+```http
+GET /api/control-devices
+PUT /api/control-devices/config
+POST /api/control-devices/learn/{target}
+POST /api/control-devices/learn-cancel
+DELETE /api/control-devices/mappings/{target}
+```
+
+`GET /api/control-devices` returns the currently discoverable Linux event
+interfaces, the saved `keyboardControl` configuration, and live connection,
+dial-mode, learning, and last-event status. Select every interface used by a
+composite keypad; button and dial events are sometimes exposed on different
+interfaces. Device IDs use `/dev/input/by-id` or `/dev/input/by-path` aliases
+where possible.
+
+Valid mapping targets are `channel-1` through `channel-4`, `dial-decrease`,
+`dial-increase`, and `dial-click`. Start learning only after enabling and saving
+at least one connected interface. Channel and click targets accept the next key
+press. Dial direction targets accept either the next key press or relative-axis
+movement and save its sign. Learned bindings are persisted immediately.
+
+Example configuration body:
+
+```json
+{
+  "enabled": true,
+  "deviceIds": [
+    "/dev/input/by-path/platform-example-usb-0:1.3:1.1-event-kbd"
+  ],
+  "gainStepPercent": 2,
+  "microphoneGainDevice": 1,
+  "channels": [
+    {
+      "number": 1,
+      "action": "none",
+      "button": {
+        "deviceId": "/dev/input/by-path/platform-example-usb-0:1.3:1.1-event-kbd",
+        "eventType": 1,
+        "code": 30,
+        "direction": 1
+      }
+    },
+    { "number": 2, "action": "unmuteWhileHeld", "button": null },
+    { "number": 3, "action": "unmuteWhileHeld", "button": null },
+    { "number": 4, "action": "unmuteWhileHeld", "button": null }
+  ],
+  "dialDecrease": null,
+  "dialIncrease": null,
+  "dialClick": null
+}
+```
+
+Linux event type `1` is a key and type `2` is a relative axis. Each channel
+action is `none`, `muteWhileHeld` (press mutes, release unmutes), or
+`unmuteWhileHeld` (press unmutes, release mutes). Active actions restore their
+release state when controls start or the selected interface disconnects. The
+dial starts in microphone mode, adjusts the configured mic send, and toggles
+between microphone and physical-output master mode on click. Gains are clamped
+to 0-150%.
+
 ## Control state
 
 ```http
@@ -282,6 +388,7 @@ Abbreviated example:
     "devices": [
       {
         "number": 1,
+        "friendlyName": "To Teams",
         "inputEnabled": true,
         "inputGain": 1.0,
         "outputEnabled": true,
@@ -369,10 +476,13 @@ GET /api/events
 Accept: text/event-stream
 ```
 
-The Server-Sent Events stream sends an initial `state` event, then pushes
+The Server-Sent Events stream sends initial `state`, `controls`, and
+`control-configuration` events, then pushes
 `state` whenever configuration/routing changes, `meters` about ten times per
 second directly from the DSP event bridge, `ndi` with sender and receiver
-health, and `ndi-sources` whenever NDI discovery changes:
+health, `ndi-sources` whenever NDI discovery changes, and keyboard control
+status/mapping changes. A comment heartbeat is sent after 15 seconds without
+an event:
 
 ```text
 event: state
@@ -406,9 +516,11 @@ curl -N http://192.168.1.91:5055/api/events
 | --- | --- | --- |
 | `GET` | `/api/status` | Last routing result and currently visible PipeWire sources/sinks |
 | `GET` | `/api/gadget` | Live USB OTG, UDC, ConfigFS function, format, and CDC serial diagnostics |
+| `POST` | `/api/gadget/restart` | Re-enumerate the fixed USB gadget unit and restore routing |
 | `GET` | `/api/nodes` | Selectable non-gadget audio nodes and their ports |
 | `GET` | `/api/ndi/status` | Latest NDI sender/receiver status snapshot |
 | `GET` | `/api/ndi/sources` | Latest discovered NDI source list |
+| `GET` | `/api/control-devices` | Discover Linux input interfaces and read control status/mappings |
 | `POST` | `/api/apply` | Reconcile the routing graph with persisted configuration |
 | `GET` | `/api/config` | Read the complete persisted configuration |
 | `PUT` | `/api/config` | Replace the complete configuration and apply it |

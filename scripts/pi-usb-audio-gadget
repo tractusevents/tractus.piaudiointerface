@@ -16,6 +16,10 @@ fi
 : "${USB_PRODUCT:=Tractus USB Audio Matrix}"
 : "${USB_SERIAL:=}"
 : "${USB_SERIAL_SUFFIX:=}"
+: "${USB_NAMES_FROM_ROUTER:=1}"
+: "${USB_SERIAL_INCLUDE_NAMES_HASH:=1}"
+: "${ROUTER_CONFIG:=/home/tractus/.config/pi-usb-audio/router.json}"
+: "${CONTROL_APP:=/opt/pi-usb-audio/PiUsbAudio.Control}"
 : "${GADGET_NAME:=pi-usb-audio}"
 : "${GADGET_COUNT:=4}"
 : "${SAMPLE_RATE:=48000}"
@@ -25,6 +29,10 @@ fi
 : "${CAPTURE_SYNC:=adaptive}"
 
 readonly GADGET="$GADGET_ROOT/$GADGET_NAME"
+declare -a FUNCTION_NAMES=()
+declare -a PLAYBACK_NAMES=()
+declare -a CAPTURE_NAMES=()
+NAMES_SERIAL_SUFFIX=
 
 log() {
     printf 'pi-usb-audio-gadget: %s\n' "$*"
@@ -61,6 +69,57 @@ derived_serial() {
         serial=$(cat /etc/machine-id 2>/dev/null || true)
     fi
     printf '%s' "${serial:-pi-usb-audio}"
+}
+
+load_channel_names() {
+    local index output standard_name name_hash
+    local custom_names=0
+    local -a configured_names=()
+
+    for ((index = 1; index <= GADGET_COUNT; index++)); do
+        FUNCTION_NAMES[$index]="Tractus USB Audio $index"
+        PLAYBACK_NAMES[$index]="Tractus USB Audio In $index"
+        CAPTURE_NAMES[$index]="Tractus USB Audio Out $index"
+    done
+
+    [[ "$USB_NAMES_FROM_ROUTER" == 1 ]] || return 0
+    [[ -x "$CONTROL_APP" && -r "$ROUTER_CONFIG" ]] || {
+        log "friendly-name config is unavailable; using standard USB names"
+        return 0
+    }
+    if ! output=$("$CONTROL_APP" gadget-names --config "$ROUTER_CONFIG"); then
+        log "could not load friendly names; using standard USB names"
+        return 0
+    fi
+    mapfile -t configured_names <<<"$output"
+    if ((${#configured_names[@]} != GADGET_COUNT)); then
+        log "friendly-name export returned ${#configured_names[@]} entries; using standard USB names"
+        return 0
+    fi
+    for ((index = 1; index <= GADGET_COUNT; index++)); do
+        [[ -n "${configured_names[index - 1]}" && ${#configured_names[index - 1]} -le 126 ]] || {
+            log "friendly name $index is not a valid USB string; using standard USB names"
+            return 0
+        }
+    done
+
+    for ((index = 1; index <= GADGET_COUNT; index++)); do
+        standard_name="Tractus USB Audio $index"
+        FUNCTION_NAMES[$index]=${configured_names[index - 1]}
+        if [[ "${configured_names[index - 1]}" != "$standard_name" ]]; then
+            # A custom function name is also used for both terminal directions.
+            # Windows may choose either string when naming an audio endpoint.
+            PLAYBACK_NAMES[$index]=${configured_names[index - 1]}
+            CAPTURE_NAMES[$index]=${configured_names[index - 1]}
+            custom_names=1
+        fi
+    done
+
+    if ((custom_names)) && [[ "$USB_SERIAL_INCLUDE_NAMES_HASH" == 1 ]]; then
+        name_hash=$(printf '%s\0' "${FUNCTION_NAMES[@]}" | sha256sum)
+        name_hash=${name_hash%% *}
+        NAMES_SERIAL_SUFFIX="-n${name_hash:0:8}"
+    fi
 }
 
 unbind_gadget() {
@@ -129,13 +188,13 @@ create_function() {
     write_attr "$function_path/c_volume_present" 0
 
     write_optional_attr "$function_path/req_number" "$REQUEST_COUNT"
-    write_optional_attr "$function_path/function_name" "Tractus USB Audio $index"
-    write_optional_attr "$function_path/p_it_name" "Tractus USB Audio In $index"
-    write_optional_attr "$function_path/p_it_ch_name" "Tractus USB Audio In $index"
-    write_optional_attr "$function_path/p_ot_name" "Tractus USB Audio In $index"
-    write_optional_attr "$function_path/c_it_name" "Tractus USB Audio Out $index"
-    write_optional_attr "$function_path/c_it_ch_name" "Tractus USB Audio Out $index"
-    write_optional_attr "$function_path/c_ot_name" "Tractus USB Audio Out $index"
+    write_optional_attr "$function_path/function_name" "${FUNCTION_NAMES[index]}"
+    write_optional_attr "$function_path/p_it_name" "${PLAYBACK_NAMES[index]}"
+    write_optional_attr "$function_path/p_it_ch_name" "${PLAYBACK_NAMES[index]}"
+    write_optional_attr "$function_path/p_ot_name" "${PLAYBACK_NAMES[index]}"
+    write_optional_attr "$function_path/c_it_name" "${CAPTURE_NAMES[index]}"
+    write_optional_attr "$function_path/c_it_ch_name" "${CAPTURE_NAMES[index]}"
+    write_optional_attr "$function_path/c_ot_name" "${CAPTURE_NAMES[index]}"
 
     ln -s "$function_path" \
         "$GADGET/configs/c.1/uac2.device$index"
@@ -153,6 +212,7 @@ start_gadget() {
     fi
     mkdir -p "$GADGET_ROOT"
 
+    load_channel_names
     remove_gadget
     mkdir "$GADGET"
     trap 'unbind_gadget' ERR
@@ -169,7 +229,7 @@ start_gadget() {
     write_attr "$GADGET/bDeviceProtocol" 0x01
 
     mkdir "$GADGET/strings/0x409"
-    serial="${USB_SERIAL:-$(derived_serial)}${USB_SERIAL_SUFFIX}"
+    serial="${USB_SERIAL:-$(derived_serial)}${USB_SERIAL_SUFFIX}${NAMES_SERIAL_SUFFIX}"
     write_attr "$GADGET/strings/0x409/serialnumber" "$serial"
     write_attr "$GADGET/strings/0x409/manufacturer" "$USB_MANUFACTURER"
     write_attr "$GADGET/strings/0x409/product" "$USB_PRODUCT"

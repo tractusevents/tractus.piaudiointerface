@@ -151,8 +151,13 @@ configuration changed.
 
 Windows caches audio interface names using the USB device instance identity.
 The default configuration appends `-v2` to the derived USB serial and advertises
-device revision 2.00 so Windows reads the current Tractus descriptor strings as
-a new instance. Increment `USB_SERIAL_SUFFIX` again after future naming changes.
+device revision 2.00. When a friendly channel name is configured, the gadget
+also appends a stable hash of all four names to the serial. Windows therefore
+reads the changed descriptors as a new device instance instead of retaining an
+old cached name. This can require selecting the audio endpoints again in
+Windows and in applications after a rename. Set
+`USB_SERIAL_INCLUDE_NAMES_HASH=0` in `/etc/default/pi-usb-audio` only if keeping
+the existing device instance matters more than reliable Windows-side renaming.
 
 ## Physical hookup and power
 
@@ -225,7 +230,9 @@ On Windows, look in both **Sound > Input** and **Sound > Output**. On macOS, use
 **Audio MIDI Setup**. Hosts may display identical generic names with numeric
 suffixes. The descriptors advertise `Tractus USB Audio In 1` through `4` and
 `Tractus USB Audio Out 1` through `4`; some Windows panels may prepend a
-localized role such as `Microphone` or `Speakers`.
+localized role such as `Microphone` or `Speakers`. When a friendly name is set,
+the function and both terminal directions instead advertise, for example,
+`To Teams (Tractus USB Audio 1)`.
 
 ## Configure the physical interface and routing
 
@@ -267,6 +274,61 @@ The configuration is saved in
 `/home/tractus/.config/pi-usb-audio/router.json`. `20%` is a linear amplitude of
 `0.2`, approximately -14 dB.
 
+Each mixer strip title is editable. A friendly name is saved immediately and
+is used in the mixer, keyboard mappings, dial target, and ducking controls. An
+empty name restores `USB Audio N`. At the next reboot, the root gadget service
+reads the same configuration before binding USB and places a custom name such
+as `To Teams` into the UAC2 strings as
+`To Teams (Tractus USB Audio 1)`. Press **Enter** or leave the field to save a
+name, then use **Apply USB Names Now** to update the attached host without
+rebooting the Pi.
+
+Applying names briefly disconnects all four audio functions and the serial
+control port, so first stop audio applications on the attached computer. The
+installer adds a narrowly scoped polkit rule: the control-service user may
+restart only `pi-usb-audio-gadget.service`, and the API cannot select another
+unit. The equivalent command is:
+
+```bash
+sudo systemctl restart pi-usb-audio-gadget
+```
+
+That operation disconnects and reconnects all four audio functions and the
+serial control port. Windows controls the final presentation and may still
+prepend a localized endpoint role. The router opens the serial function with
+`O_NOCTTY`, so removing `/dev/ttyGS0` during re-enumeration cannot hang up the
+web service. The apply operation also closes and pauses serial control until
+ConfigFS has finished rebuilding the ACM function; the user unit treats
+`SIGHUP` as restart-worthy as a final fallback.
+
+## Keyboard and dial controls
+
+The **Keyboard controls** tab can turn an attached USB keypad, keyboard, or
+macro pad into a control surface. Select all of the device's listed input
+interfaces, enable controls, and save. A composite keypad may expose its keys
+as `event-kbd` and its dial as `event-mouse`, so both can be selected. Stable
+`/dev/input/by-id` or `/dev/input/by-path` identifiers are saved when available;
+event numbers are shown as unstable fallbacks.
+
+Each channel has an independently learned key and one of three actions:
+**(No Action)**, **Press: Mute, Release: Unmute**, or **Press: Unmute, Release:
+Mute**. The shipped defaults use no action for channel 1 and push-to-talk for
+channels 2-4. Active actions restore their release state when the selected
+input interface disconnects.
+
+The dial starts in microphone mode and changes the selected microphone send by
+2 percentage points per learned detent. The step and target channel are
+configurable. Clicking the learned dial button toggles to physical-output
+master mode; clicking it again returns to microphone mode. Both ranges remain
+clamped to 0-150%.
+
+The installer adds the service user to Linux's `input` group. A reboot or full
+logout of that user's systemd session is required the first time that group is
+added. Membership in `input` permits reading selected raw input devices, so do
+not add untrusted processes to that group. The service opens only interfaces
+selected in the saved configuration, restores channel defaults after a device
+disconnect, and retries automatically when it is reattached.
+
 ## NDI audio
 
 NDI is disabled by default. In the web editor, open **NDI microphone sender**,
@@ -302,6 +364,7 @@ The same operations are available through the installed standalone executable:
 ```bash
 /opt/pi-usb-audio/PiUsbAudio.Control list
 /opt/pi-usb-audio/PiUsbAudio.Control apply
+/opt/pi-usb-audio/PiUsbAudio.Control gadget-names
 systemctl --user status pi-usb-audio-router
 ```
 
@@ -339,9 +402,11 @@ The endpoints below accept `POST` and return the updated state as JSON:
 
 `GET /api/state` returns configuration and routing feedback. `GET /api/gadget`
 reports live USB OTG, ConfigFS, UDC, format, and serial-function diagnostics.
-`GET /api/events`
-is a push-only Server-Sent Events stream carrying state changes and 10 Hz meter
-frames. `GET /api/meters` returns the latest snapshot for diagnostics. These
+`GET /api/events` is a push-only Server-Sent Events stream carrying state
+changes, keyboard-control status, and 10 Hz meter frames. The web page closes
+that stream while hidden and refreshes state when it becomes visible again, so
+a background tab cannot accumulate stale meter work. `GET /api/meters` returns
+the latest snapshot for diagnostics. These
 URLs work with Companion's Generic HTTP requests; a dedicated Companion module
 can use the event stream for button feedback and levels without polling.
 
@@ -392,4 +457,5 @@ sudo /usr/local/sbin/pi-usb-audio-diagnose
 ```
 
 Changing the number of functions, channel counts, sample size, or sample rate
-requires USB re-enumeration. Live route enables and output gains do not.
+requires USB re-enumeration. Friendly-name descriptor changes also require
+re-enumeration; live route enables and output gains do not.

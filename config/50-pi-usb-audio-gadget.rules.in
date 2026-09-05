@@ -1,0 +1,13 @@
+// Permit only the installed control-service user to restart only the USB
+// gadget unit. This does not grant permission to start, stop, or restart any
+// other system service.
+polkit.addRule(function(action, subject) {
+    if (action.id === "org.freedesktop.systemd1.manage-units" &&
+        action.lookup("unit") === "pi-usb-audio-gadget.service" &&
+        action.lookup("verb") === "restart" &&
+        subject.user === "@TARGET_USER@") {
+        return polkit.Result.YES;
+    }
+
+    return polkit.Result.NOT_HANDLED;
+});

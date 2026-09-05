@@ -7,6 +7,22 @@ var configPath = GetOption(args, "--config") ??
     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
         ".config", "pi-usb-audio", "router.json");
 
+if (command == "gadget-names")
+{
+    var configuration = await new ConfigStore(configPath).LoadAsync();
+    var errors = configuration.Validate();
+    if (errors.Count > 0)
+    {
+        Console.Error.WriteLine(string.Join("; ", errors));
+        Environment.ExitCode = 1;
+        return;
+    }
+
+    foreach (var device in configuration.Devices.OrderBy(device => device.Number))
+        Console.WriteLine(UsbChannelNames.DescriptorName(device));
+    return;
+}
+
 if (command is "list" or "apply")
 {
     var commandRunner = new CommandRunner();
@@ -39,7 +55,7 @@ if (command is "list" or "apply")
 
 if (command != "serve")
 {
-    Console.Error.WriteLine("Usage: PiUsbAudio.Control [serve|list|apply] [--config PATH]");
+    Console.Error.WriteLine("Usage: PiUsbAudio.Control [serve|list|apply|gadget-names] [--config PATH]");
     Environment.ExitCode = 2;
     return;
 }
@@ -62,9 +78,14 @@ builder.Services.AddSingleton<NdiBridgeService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<NdiBridgeService>());
 builder.Services.AddSingleton<AudioRouter>();
 builder.Services.AddSingleton<GadgetDiagnosticsService>();
+builder.Services.AddSingleton<UsbGadgetControlService>();
 builder.Services.AddSingleton<RouterControl>();
+builder.Services.AddSingleton<LinuxInputDeviceCatalog>();
+builder.Services.AddSingleton<LinuxInputControlService>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<LinuxInputControlService>());
 builder.Services.AddHostedService<RouterReconciler>();
-builder.Services.AddHostedService<SerialControlService>();
+builder.Services.AddSingleton<SerialControlService>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<SerialControlService>());
 
 var app = builder.Build();
 app.UseDefaultFiles();
@@ -80,7 +101,9 @@ app.MapGet("/api/info", () => Results.Ok(new
     {
         "ducking", "multi-trigger-ducking", "self-ducking", "solo", "push-meters", "server-sent-events",
         "sidetone", "ndi-audio", "ndi-audio-receiver", "ndi-source-discovery",
-        "push-ndi-status", "push-ndi-sources", "usb-gadget-diagnostics"
+        "push-ndi-status", "push-ndi-sources", "usb-gadget-diagnostics",
+        "linux-input-controls", "user-input-mapping", "push-to-talk", "jog-volume",
+        "friendly-channel-names", "usb-descriptor-names", "usb-gadget-restart"
     }
 }));
 
@@ -92,14 +115,18 @@ app.MapPut("/api/config", async (
     ConfigStore store,
     AudioRouter router,
     ControlEventBus eventBus,
+    LinuxInputControlService inputControls,
     CancellationToken cancellationToken) =>
 {
+    configuration.Normalize();
     var errors = configuration.Validate();
     if (errors.Count > 0)
         return Results.ValidationProblem(new Dictionary<string, string[]> { ["configuration"] = errors.ToArray() });
     await store.SaveAsync(configuration, cancellationToken);
     var routing = await router.ApplyAsync(cancellationToken);
     eventBus.Publish("state", new ControlState(configuration, routing));
+    eventBus.Publish("control-configuration", configuration.KeyboardControl);
+    inputControls.NotifyConfigurationChanged();
     return Results.Ok(routing);
 });
 
@@ -126,8 +153,78 @@ app.MapPut("/api/mappings", async (
 app.MapGet("/api/state", async (RouterControl control, CancellationToken cancellationToken) =>
     Results.Ok(await control.GetStateAsync(cancellationToken)));
 
+app.MapPost("/api/devices/{number:int}/name", async (
+    int number,
+    string? name,
+    RouterControl control,
+    CancellationToken cancellationToken) =>
+{
+    name = (name ?? string.Empty).Trim();
+    var error = UsbChannelNames.ValidateFriendlyName(name);
+    if (error is not null)
+        return Results.ValidationProblem(new Dictionary<string, string[]> { ["name"] = [error] });
+    return Results.Ok(await control.SetDeviceFriendlyNameAsync(number, name, cancellationToken));
+});
+
+app.MapGet("/api/control-devices", async (
+    ConfigStore store,
+    LinuxInputControlService inputControls,
+    CancellationToken cancellationToken) => Results.Ok(new
+{
+    devices = inputControls.DiscoverDevices(),
+    configuration = (await store.LoadAsync(cancellationToken)).KeyboardControl,
+    status = inputControls.Status
+}));
+
+app.MapPut("/api/control-devices/config", async (
+    KeyboardControlConfiguration configuration,
+    LinuxInputControlService inputControls,
+    CancellationToken cancellationToken) =>
+{
+    configuration.Normalize();
+    var errors = configuration.Validate();
+    if (errors.Count > 0)
+        return Results.ValidationProblem(new Dictionary<string, string[]> { ["configuration"] = errors.ToArray() });
+    return Results.Ok(await inputControls.SetConfigurationAsync(configuration, cancellationToken));
+});
+
+app.MapPost("/api/control-devices/learn/{target}", (
+    string target,
+    LinuxInputControlService inputControls) =>
+    inputControls.TryBeginLearning(target, out var error)
+        ? Results.Ok(inputControls.Status)
+        : Results.BadRequest(error));
+
+app.MapPost("/api/control-devices/learn-cancel", (LinuxInputControlService inputControls) =>
+{
+    inputControls.CancelLearning();
+    return Results.Ok(inputControls.Status);
+});
+
+app.MapDelete("/api/control-devices/mappings/{target}", async (
+    string target,
+    LinuxInputControlService inputControls,
+    CancellationToken cancellationToken) =>
+{
+    if (!KeyboardMappingTargets.IsValid(target))
+        return Results.BadRequest("Unknown mapping target.");
+    return Results.Ok(await inputControls.ClearMappingAsync(target, cancellationToken));
+});
+
 app.MapGet("/api/gadget", (GadgetDiagnosticsService diagnostics) =>
     Results.Ok(diagnostics.Read()));
+
+app.MapPost("/api/gadget/restart", async Task<IResult> (
+    UsbGadgetControlService gadgetControl,
+    CancellationToken cancellationToken) =>
+{
+    var result = await gadgetControl.RestartAsync(cancellationToken);
+    if (result.Success)
+        return Results.Ok(result);
+    return Results.Json(result, statusCode: result.Busy
+        ? StatusCodes.Status409Conflict
+        : StatusCodes.Status503ServiceUnavailable);
+});
 
 app.MapPost("/api/mics/{number:int}/mute", async (
     int number, RouterControl control, CancellationToken cancellationToken) =>
@@ -278,10 +375,13 @@ var eventJsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 app.MapGet("/api/events", async (
     HttpContext context,
     RouterControl control,
+    ConfigStore store,
+    LinuxInputControlService inputControls,
     ControlEventBus eventBus) =>
 {
     context.Response.Headers.CacheControl = "no-cache";
     context.Response.Headers.Connection = "keep-alive";
+    context.Response.Headers["X-Accel-Buffering"] = "no";
     context.Response.ContentType = "text/event-stream";
     await using var subscription = eventBus.Subscribe();
     try
@@ -297,10 +397,29 @@ app.MapGet("/api/events", async (
             await WriteEventAsync(context, "ndi", ndi, eventJsonOptions);
         if (eventBus.LastNdiSources is { } ndiSources)
             await WriteEventAsync(context, "ndi-sources", ndiSources, eventJsonOptions);
+        await WriteEventAsync(context, "controls", inputControls.Status, eventJsonOptions);
+        await WriteEventAsync(
+            context,
+            "control-configuration",
+            (await store.LoadAsync(context.RequestAborted)).KeyboardControl,
+            eventJsonOptions);
 
-        await foreach (var item in subscription.Reader.ReadAllAsync(context.RequestAborted))
+        while (!context.RequestAborted.IsCancellationRequested)
         {
-            await WriteEventAsync(context, item.Name, item.Data, eventJsonOptions);
+            using var heartbeat = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+            heartbeat.CancelAfter(TimeSpan.FromSeconds(15));
+            try
+            {
+                if (!await subscription.Reader.WaitToReadAsync(heartbeat.Token))
+                    break;
+                while (subscription.Reader.TryRead(out var item))
+                    await WriteEventAsync(context, item.Name, item.Data, eventJsonOptions);
+            }
+            catch (OperationCanceledException) when (!context.RequestAborted.IsCancellationRequested)
+            {
+                await context.Response.WriteAsync(": keep-alive\n\n", context.RequestAborted);
+                await context.Response.Body.FlushAsync(context.RequestAborted);
+            }
         }
     }
     catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)

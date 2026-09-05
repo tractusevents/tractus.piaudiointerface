@@ -1,0 +1,53 @@
+{
+  "gadgetMatch": "UAC2 Gadget",
+  "keyboardControl": {
+    "enabled": true,
+    "deviceIds": [
+      "/tmp/pi-usb-audio-action-test/input/by-path/control-event-kbd"
+    ],
+    "gainStepPercent": 2,
+    "microphoneGainDevice": 1,
+    "channels": [
+      {
+        "number": 1,
+        "action": "none",
+        "button": {
+          "deviceId": "/tmp/pi-usb-audio-action-test/input/by-path/control-event-kbd",
+          "eventType": 1,
+          "code": 30,
+          "direction": 1
+        }
+      },
+      {
+        "number": 2,
+        "action": "muteWhileHeld",
+        "button": {
+          "deviceId": "/tmp/pi-usb-audio-action-test/input/by-path/control-event-kbd",
+          "eventType": 1,
+          "code": 31,
+          "direction": 1
+        }
+      },
+      {
+        "number": 3,
+        "action": "unmuteWhileHeld",
+        "button": {
+          "deviceId": "/tmp/pi-usb-audio-action-test/input/by-path/control-event-kbd",
+          "eventType": 1,
+          "code": 32,
+          "direction": 1
+        }
+      },
+      { "number": 4, "action": "none", "button": null }
+    ],
+    "dialDecrease": null,
+    "dialIncrease": null,
+    "dialClick": null
+  },
+  "devices": [
+    { "number": 1, "inputEnabled": false },
+    { "number": 2, "inputEnabled": false },
+    { "number": 3, "inputEnabled": true },
+    { "number": 4, "inputEnabled": true }
+  ]
+}

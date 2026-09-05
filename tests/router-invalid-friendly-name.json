@@ -1,0 +1,9 @@
+{
+  "gadgetMatch": "UAC2 Gadget",
+  "devices": [
+    { "number": 1, "friendlyName": "12345678901234567890123456789012345678901234567890123456789012345" },
+    { "number": 2 },
+    { "number": 3 },
+    { "number": 4 }
+  ]
+}

@@ -35,10 +35,13 @@
     #tab-mixer.active { display: flex; flex-direction: column; overflow: hidden; }
     .panel { background: var(--surface); border: 1px solid #293744; border-radius: 14px; padding: 16px; }
     .panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+    .heading-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+    .heading-actions .help { margin: 0; }
+    #applyUsbNames { white-space: nowrap; }
     button { border: 0; border-radius: 8px; background: var(--blue); color: #06111b; font-weight: 750; padding: 10px 15px; cursor: pointer; }
     button:disabled { cursor: wait; opacity: .6; }
     button.secondary { background: #2b3946; color: #dce7f0; }
-    select, input[type=text] { width: 100%; border: 1px solid #3a4b5b; border-radius: 8px; background: #0d141a; color: #f5f8fb; padding: 10px; }
+    select, input[type=text], input[type=number] { width: 100%; border: 1px solid #3a4b5b; border-radius: 8px; background: #0d141a; color: #f5f8fb; padding: 10px; }
     label { display: grid; gap: 6px; color: #b9c6d2; font-size: .86rem; }
 
     .mixer-scroll { flex: 1; min-height: 0; overflow: auto; padding-bottom: 2px; }
@@ -47,6 +50,8 @@
     .device { display: flex; min-width: 0; flex-direction: column; border-radius: 11px; background: #10171d; border: 1px solid #2b3946; overflow: hidden; }
     .strip-title { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: #1d2933; border-bottom: 1px solid #33434f; }
     .strip-title h3 { font-size: .98rem; }
+    .strip-title .channel-name { min-width: 0; margin-right: 8px; padding: 4px 6px; border-color: transparent; background: transparent; color: #f1f6fa; font-size: .92rem; font-weight: 750; }
+    .strip-title .channel-name:hover, .strip-title .channel-name:focus { border-color: #50697c; background: #101820; outline: none; }
     .strip-number { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; color: #09131c; background: var(--blue); font-weight: 850; }
     .strip-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 9px 9px 0; }
     .strip-buttons .solo-toggle { grid-column: 1 / -1; }
@@ -134,9 +139,28 @@
     .function-table th, .function-table td { padding: 7px 9px; border-top: 1px solid #2c3a46; text-align: left; }
     .function-table th { color: #8295a5; font-size: .65rem; text-transform: uppercase; letter-spacing: .05em; }
     .function-table td { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .control-layout { display: grid; grid-template-columns: minmax(320px, .8fr) minmax(560px, 1.5fr); gap: 12px; }
+    .control-options { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .control-options .wide { grid-column: 1 / -1; }
+    .check-label { display: flex; align-items: center; gap: 9px; color: #eef4f8; font-weight: 700; }
+    .check-label input { width: 18px; height: 18px; accent-color: var(--blue); }
+    .device-select { min-height: 132px; font: .74rem ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .help { margin: 6px 0 0; color: #8fa2b2; font-size: .76rem; line-height: 1.4; }
+    .mapping-table { width: 100%; border-collapse: collapse; }
+    .mapping-table th, .mapping-table td { padding: 8px; border-top: 1px solid #2c3a46; text-align: left; }
+    .mapping-table th { color: #8295a5; font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; }
+    .mapping-table td:first-child { width: 124px; font-weight: 700; }
+    .mapping-table select { min-width: 112px; padding: 7px; }
+    .mapping-actions { display: flex; align-items: center; gap: 6px; }
+    .mapping-actions button { padding: 7px 10px; }
+    .mapping-actions .clear-binding { background: #59343a; color: #ffe8eb; }
+    .binding-label { min-width: 110px; color: #dbe7ef; font: .72rem ui-monospace, SFMono-Regular, Consolas, monospace; overflow-wrap: anywhere; }
+    .control-status-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 12px; color: #afbdc8; font-size: .82rem; }
+    .control-event { margin: 10px 0 0; color: #8fa3b5; font: .72rem ui-monospace, SFMono-Regular, Consolas, monospace; overflow-wrap: anywhere; }
+    #cancelLearn[hidden] { display: none; }
 
     @media (max-width: 900px) {
-      .rack-grid, .setup-grid { grid-template-columns: 1fr; }
+      .rack-grid, .setup-grid, .control-layout { grid-template-columns: 1fr; }
       .duck-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .diagnostic-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
@@ -170,12 +194,17 @@
   <nav class="tabs" aria-label="Interface sections">
     <button type="button" class="tab-button active" data-tab="mixer">Mixer</button>
     <button type="button" class="tab-button" data-tab="processing">Processing &amp; NDI</button>
+    <button type="button" class="tab-button" data-tab="controls">Keyboard controls</button>
     <button type="button" class="tab-button" data-tab="setup">Device setup</button>
   </nav>
 
   <section id="tab-mixer" class="tab-panel active panel">
     <div class="panel-heading">
       <h2>USB audio mixer</h2>
+      <div class="heading-actions">
+        <span class="help">Edit a name, then press Enter or click away to save it.</span>
+        <button id="applyUsbNames" type="button" class="secondary">Apply USB Names Now</button>
+      </div>
     </div>
     <div class="mixer-scroll">
       <div id="devices" class="devices">
@@ -314,6 +343,61 @@
     </div>
   </section>
 
+  <section id="tab-controls" class="tab-panel panel">
+    <div class="panel-heading">
+      <h2>Keyboard &amp; dial controls</h2>
+      <span id="controlHealth" class="diagnostic-state">DISABLED</span>
+    </div>
+    <div class="control-status-line">
+      <span id="controlMessage">Keyboard control is disabled.</span>
+      <button id="cancelLearn" type="button" class="secondary" hidden>Cancel learning</button>
+    </div>
+    <div class="control-layout">
+      <div class="subpanel">
+        <div class="control-options">
+          <label class="check-label wide"><input id="controlsEnabled" type="checkbox"> Enable hardware controls</label>
+          <label class="wide">Input interfaces
+            <select id="controlDeviceIds" class="device-select" multiple></select>
+          </label>
+          <p class="help wide">Select every interface belonging to the keypad. Some devices expose buttons as <strong>event-kbd</strong> and the dial as <strong>event-mouse</strong>. Ctrl/Cmd-click to select more than one.</p>
+          <label>Dial step
+            <input id="controlGainStep" type="number" min="1" max="25" step="1" value="2">
+          </label>
+          <label>Microphone dial target
+            <select id="controlMicTarget">
+              <option value="1">USB Audio 1</option><option value="2">USB Audio 2</option>
+              <option value="3">USB Audio 3</option><option value="4">USB Audio 4</option>
+            </select>
+          </label>
+        </div>
+        <div class="actions">
+          <button id="saveControls">Save controls</button>
+          <button id="refreshControls" class="secondary">Refresh devices</button>
+        </div>
+        <p id="controlLastEvent" class="control-event">Last event: —</p>
+      </div>
+
+      <div class="subpanel">
+        <h2>Button mappings</h2>
+        <p class="help">Choose exactly what each channel button does while pressed and when released.</p>
+        <div class="mixer-scroll">
+          <table class="mapping-table">
+            <thead><tr><th>Channel</th><th>Action</th><th>Input event</th></tr></thead>
+            <tbody>
+              <tr><td data-channel-label="1">USB Audio 1</td><td><select data-channel-action="1"><option value="none">(No Action)</option><option value="muteWhileHeld">Press: Mute, Release: Unmute</option><option value="unmuteWhileHeld">Press: Unmute, Release: Mute</option></select></td><td><div class="mapping-actions"><span class="binding-label" data-binding="channel-1">Not mapped</span><button data-learn="channel-1">Learn</button><button class="clear-binding" data-clear="channel-1">Clear</button></div></td></tr>
+              <tr><td data-channel-label="2">USB Audio 2</td><td><select data-channel-action="2"><option value="none">(No Action)</option><option value="muteWhileHeld">Press: Mute, Release: Unmute</option><option value="unmuteWhileHeld">Press: Unmute, Release: Mute</option></select></td><td><div class="mapping-actions"><span class="binding-label" data-binding="channel-2">Not mapped</span><button data-learn="channel-2">Learn</button><button class="clear-binding" data-clear="channel-2">Clear</button></div></td></tr>
+              <tr><td data-channel-label="3">USB Audio 3</td><td><select data-channel-action="3"><option value="none">(No Action)</option><option value="muteWhileHeld">Press: Mute, Release: Unmute</option><option value="unmuteWhileHeld">Press: Unmute, Release: Mute</option></select></td><td><div class="mapping-actions"><span class="binding-label" data-binding="channel-3">Not mapped</span><button data-learn="channel-3">Learn</button><button class="clear-binding" data-clear="channel-3">Clear</button></div></td></tr>
+              <tr><td data-channel-label="4">USB Audio 4</td><td><select data-channel-action="4"><option value="none">(No Action)</option><option value="muteWhileHeld">Press: Mute, Release: Unmute</option><option value="unmuteWhileHeld">Press: Unmute, Release: Mute</option></select></td><td><div class="mapping-actions"><span class="binding-label" data-binding="channel-4">Not mapped</span><button data-learn="channel-4">Learn</button><button class="clear-binding" data-clear="channel-4">Clear</button></div></td></tr>
+              <tr><td>Dial down</td><td>− step</td><td><div class="mapping-actions"><span class="binding-label" data-binding="dial-decrease">Not mapped</span><button data-learn="dial-decrease">Learn</button><button class="clear-binding" data-clear="dial-decrease">Clear</button></div></td></tr>
+              <tr><td>Dial up</td><td>+ step</td><td><div class="mapping-actions"><span class="binding-label" data-binding="dial-increase">Not mapped</span><button data-learn="dial-increase">Learn</button><button class="clear-binding" data-clear="dial-increase">Clear</button></div></td></tr>
+              <tr><td>Dial click</td><td>Switch mic/output</td><td><div class="mapping-actions"><span class="binding-label" data-binding="dial-click">Not mapped</span><button data-learn="dial-click">Learn</button><button class="clear-binding" data-clear="dial-click">Clear</button></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section id="tab-setup" class="tab-panel panel">
     <div class="panel-heading">
       <h2>Physical USB audio interface</h2>
@@ -370,16 +454,42 @@
 let config;
 let nodes = [];
 let ndiSources = [];
+let controlDevices = [];
+let controlConfig;
+let controlStatus;
 const liveUpdates = new Map();
+const activeRequests = new Set();
 let eventSource;
+let loadPromise;
 
 const byId = id => document.getElementById(id);
 const escapeHtml = value => String(value).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 
-async function request(url, options) {
-  const response = await fetch(url, options);
-  if (!response.ok) throw new Error(await response.text());
-  return response.json();
+async function request(url, options = {}) {
+  const controller = new AbortController();
+  activeRequests.add(controller);
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    if (!response.ok) {
+      let detail = await response.text();
+      try {
+        const problem = JSON.parse(detail);
+        detail = problem.message || problem.detail || detail;
+      } catch (_) {
+        // Use a non-JSON response body as-is.
+      }
+      throw new Error(detail || `Request failed with HTTP ${response.status}.`);
+    }
+    return response.json();
+  } catch (error) {
+    if (error.name === 'AbortError')
+      throw new Error('The control service did not respond. Reconnecting…');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    activeRequests.delete(controller);
+  }
 }
 
 function nodeLabel(node) {
@@ -532,6 +642,64 @@ async function toggleRoute(button) {
 function updateInputUnlessActive(element, value) {
   if (document.activeElement !== element)
     element.value = String(value);
+}
+
+function friendlyDeviceName(device) {
+  return device?.friendlyName || `USB Audio ${device?.number ?? ''}`.trim();
+}
+
+function paintFriendlyNames() {
+  if (!config?.devices) return;
+  const selectedMicTarget = byId('controlMicTarget').value;
+  const devices = [...config.devices].sort((a, b) => a.number - b.number);
+  byId('controlMicTarget').innerHTML = devices.map(device =>
+    `<option value="${device.number}" ${String(device.number) === selectedMicTarget ? 'selected' : ''}>${escapeHtml(friendlyDeviceName(device))}</option>`
+  ).join('');
+  for (const device of devices) {
+    const name = friendlyDeviceName(device);
+    const card = document.querySelector(`#channelDevices .device[data-number="${device.number}"]`);
+    if (card) {
+      const input = card.querySelector('.channel-name');
+      updateInputUnlessActive(input, device.friendlyName || '');
+      input.placeholder = `USB Audio ${device.number}`;
+      input.title = device.friendlyName
+        ? `${device.friendlyName} (Tractus USB Audio ${device.number}) after USB re-enumeration`
+        : `USB Audio ${device.number}; enter a friendly name`;
+    }
+    const mappingLabel = document.querySelector(`[data-channel-label="${device.number}"]`);
+    if (mappingLabel) mappingLabel.textContent = name;
+    const trigger = document.querySelector(`.trigger-toggle[data-source="${device.number}"]`);
+    if (trigger) {
+      trigger.textContent = device.friendlyName || `Out ${device.number}`;
+      trigger.title = name;
+    }
+  }
+}
+
+async function saveFriendlyName(input) {
+  const number = Number(input.closest('.device').dataset.number);
+  const device = config.devices.find(value => value.number === number);
+  const previous = device.friendlyName || '';
+  const name = input.value.trim();
+  if (name === previous) {
+    input.value = previous;
+    return;
+  }
+  input.disabled = true;
+  try {
+    const result = await request(`/api/devices/${number}/name?name=${encodeURIComponent(name)}`, {
+      method: 'POST'
+    });
+    applyControlState(result);
+    byId('message').textContent = name
+      ? `Saved “${name}”. Click Apply USB Names Now when host audio is idle to expose it to Windows.`
+      : `Cleared channel ${number}'s friendly name. Click Apply USB Names Now when host audio is idle to update Windows.`;
+  } catch (error) {
+    input.value = previous;
+    byId('message').textContent = error.message;
+  } finally {
+    input.disabled = false;
+  }
 }
 
 function paintDucking() {
@@ -744,12 +912,104 @@ function applyControlState(state) {
   }
   updateInputUnlessActive(byId('masterGain'), Math.round(config.physicalPlaybackGain * 100));
   byId('masterGainValue').textContent = `${Math.round(config.physicalPlaybackGain * 100)}%`;
+  paintFriendlyNames();
   paintDucking();
   paintNdiConfiguration();
 }
 
+function mappingBinding(target) {
+  if (!controlConfig) return null;
+  if (target.startsWith('channel-')) {
+    const number = Number(target.slice('channel-'.length));
+    return controlConfig.channels.find(channel => channel.number === number)?.button || null;
+  }
+  if (target === 'dial-decrease') return controlConfig.dialDecrease;
+  if (target === 'dial-increase') return controlConfig.dialIncrease;
+  if (target === 'dial-click') return controlConfig.dialClick;
+  return null;
+}
+
+function shortDeviceId(value) {
+  const words = String(value || '').split('/');
+  return words[words.length - 1] || value;
+}
+
+function paintControlConfiguration(value) {
+  if (!value) return;
+  controlConfig = value;
+  byId('controlsEnabled').checked = value.enabled;
+  updateInputUnlessActive(byId('controlGainStep'), value.gainStepPercent);
+  updateInputUnlessActive(byId('controlMicTarget'), value.microphoneGainDevice);
+  for (const channel of value.channels) {
+    const select = document.querySelector(`[data-channel-action="${channel.number}"]`);
+    updateInputUnlessActive(select, channel.action);
+  }
+  for (const label of document.querySelectorAll('[data-binding]')) {
+    const binding = mappingBinding(label.dataset.binding);
+    label.textContent = binding
+      ? `${binding.displayName || `event ${binding.eventType}:${binding.code}`} · ${shortDeviceId(binding.deviceId)}`
+      : 'Not mapped';
+  }
+  fillControlDeviceSelect();
+}
+
+function fillControlDeviceSelect() {
+  if (!controlConfig) return;
+  const selected = controlConfig.deviceIds || [];
+  const choices = [...controlDevices];
+  for (const deviceId of selected) {
+    if (!choices.some(device => device.id === deviceId)) {
+      choices.push({ id: deviceId, name: 'Disconnected interface', supportsKeys: false,
+        supportsRelativeAxes: false, stableId: true });
+    }
+  }
+  byId('controlDeviceIds').innerHTML = choices.map(device => {
+    const capabilities = [device.supportsKeys ? 'keys' : '', device.supportsRelativeAxes ? 'dial' : '']
+      .filter(Boolean).join('+') || 'unavailable';
+    const unstable = device.stableId ? '' : ' · unstable event number';
+    return `<option value="${escapeHtml(device.id)}" ${selected.includes(device.id) ? 'selected' : ''}>${escapeHtml(device.name)} · ${escapeHtml(shortDeviceId(device.id))} · ${capabilities}${unstable}</option>`;
+  }).join('');
+}
+
+function applyControlsStatus(value) {
+  if (!value) return;
+  controlStatus = value;
+  const health = byId('controlHealth');
+  const connected = value.enabled && value.connectedDeviceIds?.length > 0 && !value.error;
+  health.className = `diagnostic-state ${connected ? 'good' : ''}`;
+  health.textContent = !value.supported ? 'UNSUPPORTED'
+    : !value.enabled ? 'DISABLED' : connected ? `${value.dialMode.toUpperCase()} MODE` : 'WAITING';
+  byId('controlMessage').textContent = value.error ? `${value.message} ${value.error}` : value.message;
+  byId('cancelLearn').hidden = !value.learningTarget;
+  document.querySelectorAll('[data-learn]').forEach(button => {
+    button.disabled = Boolean(value.learningTarget);
+    button.textContent = value.learningTarget === button.dataset.learn ? 'Waiting…' : 'Learn';
+  });
+  const last = value.lastEvent;
+  byId('controlLastEvent').textContent = last
+    ? `Last event: ${last.displayName} · value ${last.value} · ${shortDeviceId(last.deviceId)}`
+    : 'Last event: —';
+}
+
+function applyControlDeviceResponse(value) {
+  controlDevices = value.devices || [];
+  paintControlConfiguration(value.configuration);
+  applyControlsStatus(value.status);
+}
+
+function stopEventStream() {
+  if (!eventSource) return;
+  eventSource.close();
+  eventSource = null;
+}
+
+function cancelActiveRequests() {
+  for (const controller of activeRequests)
+    controller.abort();
+}
+
 function startEventStream() {
-  if (eventSource) return;
+  if (eventSource || document.visibilityState === 'hidden') return;
   eventSource = new EventSource('/api/events');
   eventSource.addEventListener('state', event => {
     applyControlState(JSON.parse(event.data));
@@ -763,12 +1023,26 @@ function startEventStream() {
   eventSource.addEventListener('ndi-sources', event => {
     applyNdiSources(JSON.parse(event.data));
   });
+  eventSource.addEventListener('controls', event => {
+    applyControlsStatus(JSON.parse(event.data));
+  });
+  eventSource.addEventListener('control-configuration', event => {
+    paintControlConfiguration(JSON.parse(event.data));
+  });
+  eventSource.onerror = () => {
+    if (eventSource?.readyState === EventSource.CLOSED) {
+      stopEventStream();
+      setTimeout(startEventStream, 1000);
+    }
+  };
 }
 
 function renderDevices() {
   byId('channelDevices').innerHTML = config.devices.sort((a, b) => a.number - b.number).map(device => `
     <div class="device" data-number="${device.number}">
-      <div class="strip-title"><h3>USB Audio ${device.number}</h3><span class="strip-number">${device.number}</span></div>
+      <div class="strip-title"><input class="channel-name" type="text" maxlength="64"
+        value="${escapeHtml(device.friendlyName || '')}" placeholder="USB Audio ${device.number}"
+        aria-label="Friendly name for USB Audio ${device.number}"><span class="strip-number">${device.number}</span></div>
       <div class="strip-buttons">
         <button type="button" class="route-toggle ${device.inputEnabled ? 'on' : 'off'}" data-kind="input"
           aria-pressed="${device.inputEnabled}"><span>Mic feed</span><strong>${device.inputEnabled ? 'ON' : 'MUTED'}</strong></button>
@@ -819,7 +1093,20 @@ function renderDevices() {
       value => { device.inputGain = value; });
     bindGainSlider(card.querySelector('.output-gain'), `output-${number}`, `/api/outputs/${number}/gain`,
       value => { device.outputGain = value; });
+    const nameInput = card.querySelector('.channel-name');
+    nameInput.addEventListener('change', () => saveFriendlyName(nameInput));
+    nameInput.addEventListener('keydown', event => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        event.target.blur();
+      }
+      if (event.key === 'Escape') {
+        event.target.value = config.devices.find(value => value.number === number)?.friendlyName || '';
+        event.target.blur();
+      }
+    });
   });
+  paintFriendlyNames();
 }
 
 function refreshChannels() {
@@ -830,24 +1117,35 @@ function refreshChannels() {
 }
 
 async function load() {
+  if (loadPromise) return loadPromise;
+  loadPromise = (async () => {
+    try {
+      const [state, nodeList, gadget, discoveredNdiSources, controls] = await Promise.all([
+        request('/api/state'), request('/api/nodes'), request('/api/gadget'),
+        request('/api/ndi/sources'), request('/api/control-devices')
+      ]);
+      config = state.configuration;
+      nodes = nodeList;
+      ndiSources = discoveredNdiSources.sources || [];
+      fillNodeSelect(byId('captureNode'), 'Audio/Source', config.physicalCaptureNode);
+      fillNodeSelect(byId('playbackNode'), 'Audio/Sink', config.physicalPlaybackNode);
+      byId('masterGain').value = Math.round(config.physicalPlaybackGain * 100);
+      byId('masterGainValue').textContent = `${byId('masterGain').value}%`;
+      refreshChannels();
+      renderDevices();
+      applyControlState(state);
+      paintGadget(gadget);
+      applyControlDeviceResponse(controls);
+    } catch (error) {
+      byId('message').textContent = error.message;
+    } finally {
+      startEventStream();
+    }
+  })();
   try {
-    const [state, nodeList, gadget, discoveredNdiSources] = await Promise.all([
-      request('/api/state'), request('/api/nodes'), request('/api/gadget'), request('/api/ndi/sources')
-    ]);
-    config = state.configuration;
-    nodes = nodeList;
-    ndiSources = discoveredNdiSources.sources || [];
-    fillNodeSelect(byId('captureNode'), 'Audio/Source', config.physicalCaptureNode);
-    fillNodeSelect(byId('playbackNode'), 'Audio/Sink', config.physicalPlaybackNode);
-    byId('masterGain').value = Math.round(config.physicalPlaybackGain * 100);
-    byId('masterGainValue').textContent = `${byId('masterGain').value}%`;
-    refreshChannels();
-    renderDevices();
-    applyControlState(state);
-    paintGadget(gadget);
-    startEventStream();
-  } catch (error) {
-    byId('message').textContent = error.message;
+    await loadPromise;
+  } finally {
+    loadPromise = null;
   }
 }
 
@@ -977,7 +1275,103 @@ bindDuckingSlider('duckDepth', 'depth', '/api/ducking/depth', 'db', 'depthDb', '
 bindDuckingSlider('duckAttack', 'attack', '/api/ducking/attack', 'milliseconds', 'attackMilliseconds', 'ms');
 bindDuckingSlider('duckHold', 'hold', '/api/ducking/hold', 'milliseconds', 'holdMilliseconds', 'ms');
 bindDuckingSlider('duckRelease', 'release', '/api/ducking/release', 'milliseconds', 'releaseMilliseconds', 'ms');
+
+byId('saveControls').addEventListener('click', async () => {
+  if (!controlConfig) return;
+  const button = byId('saveControls');
+  const deviceIds = Array.from(byId('controlDeviceIds').selectedOptions, option => option.value);
+  const updated = {
+    ...controlConfig,
+    enabled: byId('controlsEnabled').checked,
+    deviceIds,
+    gainStepPercent: Number(byId('controlGainStep').value),
+    microphoneGainDevice: Number(byId('controlMicTarget').value),
+    channels: controlConfig.channels.map(channel => ({
+      ...channel,
+      action: document.querySelector(`[data-channel-action="${channel.number}"]`).value
+    }))
+  };
+  button.disabled = true;
+  try {
+    paintControlConfiguration(await request('/api/control-devices/config', {
+      method: 'PUT', headers: {'content-type':'application/json'}, body: JSON.stringify(updated)
+    }));
+    byId('message').textContent = 'Keyboard and dial controls saved.';
+  } catch (error) {
+    byId('message').textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+byId('refreshControls').addEventListener('click', async () => {
+  try {
+    applyControlDeviceResponse(await request('/api/control-devices'));
+  } catch (error) {
+    byId('message').textContent = error.message;
+  }
+});
+
+document.querySelectorAll('[data-learn]').forEach(button => {
+  button.addEventListener('click', async () => {
+    try {
+      applyControlsStatus(await request(
+        `/api/control-devices/learn/${encodeURIComponent(button.dataset.learn)}`,
+        { method: 'POST' }));
+    } catch (error) {
+      byId('message').textContent = error.message;
+    }
+  });
+});
+
+document.querySelectorAll('[data-clear]').forEach(button => {
+  button.addEventListener('click', async () => {
+    try {
+      paintControlConfiguration(await request(
+        `/api/control-devices/mappings/${encodeURIComponent(button.dataset.clear)}`,
+        { method: 'DELETE' }));
+    } catch (error) {
+      byId('message').textContent = error.message;
+    }
+  });
+});
+
+byId('cancelLearn').addEventListener('click', async () => {
+  try {
+    applyControlsStatus(await request('/api/control-devices/learn-cancel', { method: 'POST' }));
+  } catch (error) {
+    byId('message').textContent = error.message;
+  }
+});
+
 byId('refresh').addEventListener('click', load);
+byId('applyUsbNames').addEventListener('click', async () => {
+  if (!window.confirm(
+    'Applying USB names briefly disconnects all four USB audio devices and the serial control port. Continue?'))
+    return;
+
+  const button = byId('applyUsbNames');
+  const originalText = button.textContent;
+  button.disabled = true;
+  button.textContent = 'Applying…';
+  byId('message').textContent = 'Restarting the USB gadget…';
+  try {
+    const result = await request('/api/gadget/restart', { method: 'POST' });
+    paintGadget(result.gadget);
+    await loadStatus();
+    byId('message').textContent = result.message;
+  } catch (error) {
+    byId('message').textContent = error.message;
+    try {
+      paintGadget(await request('/api/gadget'));
+    } catch (_) {
+      // Keep the original restart error visible.
+    }
+  } finally {
+    button.disabled = false;
+    button.textContent = originalText;
+  }
+});
 byId('save').addEventListener('click', async () => {
   const button = byId('save');
   const mappings = {
@@ -999,6 +1393,25 @@ byId('save').addEventListener('click', async () => {
   } finally {
     button.disabled = false;
   }
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    stopEventStream();
+    cancelActiveRequests();
+    return;
+  }
+  load();
+});
+window.addEventListener('pageshow', event => {
+  if (event.persisted) {
+    stopEventStream();
+    load();
+  }
+});
+window.addEventListener('online', () => {
+  stopEventStream();
+  load();
 });
 
 load();

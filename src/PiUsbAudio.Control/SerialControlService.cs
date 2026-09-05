@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 
 namespace PiUsbAudio.Control;
 
@@ -14,30 +15,55 @@ public sealed class SerialControlService(
     private const short PollHangUp = 0x0010;
     private const short PollInvalid = 0x0020;
     private const int InterruptedSystemCall = 4;
+    private const int OpenReadWrite = 0x0002;
+    private const int OpenNoControllingTerminal = 0x0100;
+    private const int OpenCloseOnExec = 0x80000;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private readonly SemaphoreSlim connectionLock = new(1, 1);
+    private volatile bool pauseRequested;
     private readonly string devicePath =
         Environment.GetEnvironmentVariable("PI_USB_AUDIO_SERIAL") ?? "/dev/ttyGS0";
+
+    public async Task<IDisposable> PauseAsync(CancellationToken cancellationToken = default)
+    {
+        pauseRequested = true;
+        try
+        {
+            await connectionLock.WaitAsync(cancellationToken);
+            return new PauseScope(this);
+        }
+        catch
+        {
+            pauseRequested = false;
+            throw;
+        }
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await Task.Yield();
         while (!stoppingToken.IsCancellationRequested)
         {
+            var connectionLockHeld = false;
             try
             {
+                if (pauseRequested)
+                {
+                    await Task.Delay(100, stoppingToken);
+                    continue;
+                }
                 if (!File.Exists(devicePath))
                 {
                     await Task.Delay(1000, stoppingToken);
                     continue;
                 }
 
-                await using var stream = new FileStream(
-                    devicePath,
-                    FileMode.Open,
-                    FileAccess.ReadWrite,
-                    FileShare.ReadWrite,
-                    4096,
-                    FileOptions.None);
+                await connectionLock.WaitAsync(stoppingToken);
+                connectionLockHeld = true;
+                if (pauseRequested)
+                    continue;
+
+                await using var stream = OpenSerialDevice();
                 await using var writer = new StreamWriter(stream, new UTF8Encoding(false), 4096, leaveOpen: true)
                 {
                     AutoFlush = true,
@@ -52,7 +78,7 @@ public sealed class SerialControlService(
                 var commandBuffer = new List<byte>(256);
 
                 logger.LogInformation("USB serial control is ready on {DevicePath}", devicePath);
-                while (!stoppingToken.IsCancellationRequested)
+                while (!stoppingToken.IsCancellationRequested && !pauseRequested)
                 {
                     pollDescriptor.ReturnedEvents = 0;
                     var pollResult = Poll(ref pollDescriptor, 1, 250);
@@ -65,6 +91,8 @@ public sealed class SerialControlService(
                     if (pollResult == 0)
                         continue;
                     if ((pollDescriptor.ReturnedEvents & (PollError | PollHangUp | PollInvalid)) != 0)
+                        break;
+                    if (pauseRequested)
                         break;
 
                     var bytesRead = stream.Read(readBuffer, 0, readBuffer.Length);
@@ -101,8 +129,32 @@ public sealed class SerialControlService(
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
                 logger.LogDebug("USB serial control disconnected: {Message}", exception.Message);
+                if (connectionLockHeld)
+                {
+                    connectionLock.Release();
+                    connectionLockHeld = false;
+                }
                 await Task.Delay(1000, stoppingToken);
             }
+            finally
+            {
+                if (connectionLockHeld)
+                    connectionLock.Release();
+            }
+        }
+    }
+
+    private sealed class PauseScope(SerialControlService owner) : IDisposable
+    {
+        private SerialControlService? owner = owner;
+
+        public void Dispose()
+        {
+            var current = Interlocked.Exchange(ref owner, null);
+            if (current is null)
+                return;
+            current.pauseRequested = false;
+            current.connectionLock.Release();
         }
     }
 
@@ -116,6 +168,36 @@ public sealed class SerialControlService(
 
     [DllImport("libc", EntryPoint = "poll", SetLastError = true)]
     private static extern int Poll(ref PollDescriptor fileDescriptors, nuint descriptorCount, int timeoutMilliseconds);
+
+    [DllImport("libc", EntryPoint = "open", SetLastError = true)]
+    private static extern int Open(string path, int flags);
+
+    private FileStream OpenSerialDevice()
+    {
+        // systemd services are session leaders. Opening a terminal without
+        // O_NOCTTY would make ttyGS0 the service's controlling terminal, so a
+        // USB gadget rebind would send SIGHUP to the complete web/router
+        // process. O_CLOEXEC also prevents leaking the device to child tools.
+        var descriptor = Open(
+            devicePath,
+            OpenReadWrite | OpenNoControllingTerminal | OpenCloseOnExec);
+        if (descriptor < 0)
+        {
+            var error = Marshal.GetLastPInvokeError();
+            throw new IOException($"Could not open {devicePath} (errno {error}).");
+        }
+
+        var handle = new SafeFileHandle((IntPtr)descriptor, ownsHandle: true);
+        try
+        {
+            return new FileStream(handle, FileAccess.ReadWrite, 4096, isAsync: false);
+        }
+        catch
+        {
+            handle.Dispose();
+            throw;
+        }
+    }
 
     private async Task<object> ExecuteCommandAsync(string command, CancellationToken cancellationToken)
     {

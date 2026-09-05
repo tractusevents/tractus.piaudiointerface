@@ -47,10 +47,15 @@ done
 
 [[ ${EUID:-$(id -u)} -eq 0 ]] || { printf 'Run this installer with sudo.\n' >&2; exit 1; }
 getent passwd "$TARGET_USER" >/dev/null || { printf 'User %s does not exist.\n' "$TARGET_USER" >&2; exit 1; }
+[[ "$TARGET_USER" =~ ^[a-zA-Z_][a-zA-Z0-9_.-]*[$]?$ ]] || {
+    printf 'User %s cannot be safely written to the polkit rule.\n' "$TARGET_USER" >&2
+    exit 1
+}
 
 TARGET_UID=$(id -u "$TARGET_USER")
 TARGET_HOME=$(getent passwd "$TARGET_USER" | cut -d: -f6)
 DOTNET="$TARGET_HOME/.dotnet/dotnet"
+INPUT_GROUP_ADDED=0
 
 user_systemctl() {
     runuser -u "$TARGET_USER" -- env \
@@ -62,7 +67,7 @@ user_systemctl() {
 
 if ((INSTALL_PACKAGES)); then
     apt-get update
-    apt-get install -y pipewire pipewire-audio pipewire-bin wireplumber alsa-utils usbutils \
+    apt-get install -y pipewire pipewire-audio pipewire-bin wireplumber alsa-utils usbutils polkitd \
         build-essential pkg-config libpipewire-0.3-dev libavahi-client3
 fi
 
@@ -91,9 +96,18 @@ install -Dm644 "$PROJECT_ROOT/systemd/pi-usb-audio-realtime.conf" \
     "/etc/systemd/system/user@$TARGET_UID.service.d/pi-usb-audio-realtime.conf"
 install -Dm644 "$PROJECT_ROOT/config/90-pi-usb-audio-serial.rules" \
     /etc/udev/rules.d/90-pi-usb-audio-serial.rules
+install -d -m755 /etc/polkit-1/rules.d
+sed "s/@TARGET_USER@/$TARGET_USER/g" \
+    "$PROJECT_ROOT/config/50-pi-usb-audio-gadget.rules.in" \
+    >/etc/polkit-1/rules.d/50-pi-usb-audio-gadget.rules
+chmod 644 /etc/polkit-1/rules.d/50-pi-usb-audio-gadget.rules
 
 if [[ ! -e /etc/default/pi-usb-audio ]]; then
     install -Dm644 "$PROJECT_ROOT/config/gadget.env" /etc/default/pi-usb-audio
+fi
+if ! grep -q '^ROUTER_CONFIG=' /etc/default/pi-usb-audio; then
+    printf '\nROUTER_CONFIG="%s/.config/pi-usb-audio/router.json"\n' "$TARGET_HOME" \
+        >>/etc/default/pi-usb-audio
 fi
 
 install -d -o "$TARGET_USER" -g "$TARGET_USER" "$TARGET_HOME/.config/pi-usb-audio"
@@ -240,7 +254,10 @@ if ((EDIT_BOOT_CONFIG)); then
     fi
 fi
 
-usermod -aG audio,dialout "$TARGET_USER"
+if ! id -nG "$TARGET_USER" | tr ' ' '\n' | grep -qx input; then
+    INPUT_GROUP_ADDED=1
+fi
+usermod -aG audio,dialout,input "$TARGET_USER"
 loginctl enable-linger "$TARGET_USER"
 
 systemctl daemon-reload
@@ -270,4 +287,13 @@ Installation complete.
 
 The control service listens on all interfaces and has no authentication.
 Do not expose port 5055 to the public internet.
+The web UI can restart only pi-usb-audio-gadget.service to apply USB names.
 EOF
+
+if ((INPUT_GROUP_ADDED)); then
+    cat <<EOF
+
+The $TARGET_USER user was added to the input group for keyboard/dial controls.
+Reboot (or fully log out that user's systemd session) before enabling them.
+EOF
+fi

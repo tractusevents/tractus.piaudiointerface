@@ -14,6 +14,18 @@ trap 'rm -f "$native_output" "$ndi_native_output"; rm -rf "$publish_output"' EXI
 bash -n "$project_root/scripts/pi-usb-audio-gadget" \
     "$project_root/scripts/pi-usb-audio-diagnose" \
     "$project_root/scripts/install.sh"
+grep -q '^RestartForceExitStatus=SIGHUP$' \
+    "$project_root/systemd/pi-usb-audio-router.service"
+grep -q 'OpenNoControllingTerminal' \
+    "$project_root/src/PiUsbAudio.Control/SerialControlService.cs"
+grep -q 'serialControl.PauseAsync' \
+    "$project_root/src/PiUsbAudio.Control/UsbGadgetControlService.cs"
+grep -q 'action.lookup("unit") === "pi-usb-audio-gadget.service"' \
+    "$project_root/config/50-pi-usb-audio-gadget.rules.in"
+grep -q 'action.lookup("verb") === "restart"' \
+    "$project_root/config/50-pi-usb-audio-gadget.rules.in"
+grep -q 'subject.user === "@TARGET_USER@"' \
+    "$project_root/config/50-pi-usb-audio-gadget.rules.in"
 "$dotnet_bin" restore "$control_project" --runtime linux-arm64
 "$dotnet_bin" build "$control_project" --no-restore
 "$dotnet_bin" publish "$control_project" \
@@ -56,6 +68,24 @@ standalone_list_output=$(env \
     "$standalone_app" list)
 grep -q 'Example USB Capture' <<<"$standalone_list_output"
 
+friendly_names_output=$("$dotnet_bin" "$app" gadget-names \
+    --config "$project_root/tests/router-friendly-names.json")
+grep -qx 'To Teams (Tractus USB Audio 1)' <<<"$friendly_names_output"
+grep -qx 'Zoom Return (Tractus USB Audio 2)' <<<"$friendly_names_output"
+grep -qx 'Tractus USB Audio 3' <<<"$friendly_names_output"
+grep -qx 'Broadcast (Tractus USB Audio 4)' <<<"$friendly_names_output"
+
+keyboard_actions_output=$("$dotnet_bin" "$app" gadget-names \
+    --config "$project_root/tests/router-keyboard-actions.json")
+[[ $(grep -c '^Tractus USB Audio [1-4]$' <<<"$keyboard_actions_output") -eq 4 ]]
+
+if invalid_friendly_name_output=$("$dotnet_bin" "$app" gadget-names \
+    --config "$project_root/tests/router-invalid-friendly-name.json" 2>&1); then
+    printf 'Expected a USB friendly name above 64 UTF-8 bytes to be rejected.\n' >&2
+    exit 1
+fi
+grep -q 'friendlyName must be at most 64 UTF-8 bytes' <<<"$invalid_friendly_name_output"
+
 apply_output=$("$dotnet_bin" "$app" apply --config "$project_root/tests/router.json")
 grep -q '"GadgetCount": 4' <<<"$apply_output"
 grep -q '"LinksCreated": 17' <<<"$apply_output"
@@ -85,5 +115,15 @@ if invalid_gain_output=$("$dotnet_bin" "$app" apply \
     exit 1
 fi
 grep -q 'physicalPlaybackGain must be between 0.0 and 1.5' <<<"$invalid_gain_output"
+
+if invalid_keyboard_output=$("$dotnet_bin" "$app" apply \
+    --config "$project_root/tests/router-invalid-keyboard.json"); then
+    printf 'Expected invalid keyboard control mappings to be rejected.\n' >&2
+    exit 1
+fi
+grep -q 'keyboardControl.gainStepPercent must be between 1 and 25' <<<"$invalid_keyboard_output"
+grep -q 'keyboardControl.microphoneGainDevice must be between 1 and 4' <<<"$invalid_keyboard_output"
+grep -q 'keyboardControl.channels\[1\].button must use a key event' <<<"$invalid_keyboard_output"
+grep -q 'keyboardControl.channels\[2\].action is invalid' <<<"$invalid_keyboard_output"
 
 printf 'Smoke tests passed.\n'

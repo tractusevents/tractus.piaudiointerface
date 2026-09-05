@@ -22,6 +22,25 @@ public sealed class RouterControl(
                 device.InputEnabled = enabled;
         }, cancellationToken);
 
+    public Task<ControlState> SetDeviceFriendlyNameAsync(
+        int number,
+        string friendlyName,
+        CancellationToken cancellationToken = default) =>
+        UpdateMetadataAsync(configuration =>
+            SelectDevice(configuration, number).FriendlyName = friendlyName.Trim(), cancellationToken);
+
+    public Task<ControlState> SetMicrophoneEnabledStatesAsync(
+        IReadOnlyDictionary<int, bool> enabledStates,
+        CancellationToken cancellationToken = default) =>
+        UpdateAsync(configuration =>
+        {
+            foreach (var device in configuration.Devices)
+            {
+                if (enabledStates.TryGetValue(device.Number, out var enabled))
+                    device.InputEnabled = enabled;
+            }
+        }, cancellationToken);
+
     public Task<ControlState> SetOutputEnabledAsync(
         int? number,
         bool enabled,
@@ -209,6 +228,16 @@ public sealed class RouterControl(
         if (!dspResult.Success)
             routing = await router.ApplyAsync(cancellationToken);
         var state = new ControlState(configuration, routing);
+        eventBus.Publish("state", state);
+        return state;
+    }
+
+    private async Task<ControlState> UpdateMetadataAsync(
+        Action<RouterConfiguration> update,
+        CancellationToken cancellationToken)
+    {
+        var configuration = await configStore.UpdateAsync(update, cancellationToken);
+        var state = new ControlState(configuration, router.LastResult);
         eventBus.Publish("state", state);
         return state;
     }

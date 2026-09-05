@@ -13,6 +13,7 @@ Environment=TRACTUS_DSP_SOCKET=%t/tractus-audio-dsp.sock
 Environment=TRACTUS_NDI_SOCKET=%t/tractus-ndi-audio.sock
 ExecStart=/opt/pi-usb-audio/PiUsbAudio.Control serve
 Restart=on-failure
+RestartForceExitStatus=SIGHUP
 RestartSec=2
 TimeoutStopSec=5
 

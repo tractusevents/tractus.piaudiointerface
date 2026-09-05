@@ -1,0 +1,9 @@
+{
+  "gadgetMatch": "UAC2 Gadget",
+  "devices": [
+    { "number": 1, "friendlyName": "To Teams" },
+    { "number": 2, "friendlyName": "Zoom Return" },
+    { "number": 3, "friendlyName": "" },
+    { "number": 4, "friendlyName": "Broadcast" }
+  ]
+}

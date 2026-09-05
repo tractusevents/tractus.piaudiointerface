@@ -29,11 +29,26 @@
     "sourceName": "",
     "gain": 1.0
   },
+  "keyboardControl": {
+    "enabled": false,
+    "deviceIds": [],
+    "gainStepPercent": 2,
+    "microphoneGainDevice": 1,
+    "channels": [
+      { "number": 1, "action": "none", "button": null },
+      { "number": 2, "action": "unmuteWhileHeld", "button": null },
+      { "number": 3, "action": "unmuteWhileHeld", "button": null },
+      { "number": 4, "action": "unmuteWhileHeld", "button": null }
+    ],
+    "dialDecrease": null,
+    "dialIncrease": null,
+    "dialClick": null
+  },
   "reconcileIntervalSeconds": 10,
   "devices": [
-    { "number": 1, "inputEnabled": true, "inputGain": 1.0, "outputEnabled": true, "outputGain": 1.0, "outputSolo": false },
-    { "number": 2, "inputEnabled": true, "inputGain": 1.0, "outputEnabled": true, "outputGain": 1.0, "outputSolo": false },
-    { "number": 3, "inputEnabled": true, "inputGain": 1.0, "outputEnabled": true, "outputGain": 1.0, "outputSolo": false },
-    { "number": 4, "inputEnabled": true, "inputGain": 1.0, "outputEnabled": true, "outputGain": 1.0, "outputSolo": false }
+    { "number": 1, "friendlyName": "", "inputEnabled": true, "inputGain": 1.0, "outputEnabled": true, "outputGain": 1.0, "outputSolo": false },
+    { "number": 2, "friendlyName": "", "inputEnabled": true, "inputGain": 1.0, "outputEnabled": true, "outputGain": 1.0, "outputSolo": false },
+    { "number": 3, "friendlyName": "", "inputEnabled": true, "inputGain": 1.0, "outputEnabled": true, "outputGain": 1.0, "outputSolo": false },
+    { "number": 4, "friendlyName": "", "inputEnabled": true, "inputGain": 1.0, "outputEnabled": true, "outputGain": 1.0, "outputSolo": false }
   ]
 }
