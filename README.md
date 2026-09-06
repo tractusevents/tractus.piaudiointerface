@@ -459,3 +459,7 @@ sudo /usr/local/sbin/pi-usb-audio-diagnose
 Changing the number of functions, channel counts, sample size, or sample rate
 requires USB re-enumeration. Friendly-name descriptor changes also require
 re-enumeration; live route enables and output gains do not.
+
+The router derives channel order from each node's ALSA card number, not
+PipeWire's transient `device.id`. This keeps USB 1-4 aligned with their matching
+host descriptors and mixer strips after every re-enumeration.

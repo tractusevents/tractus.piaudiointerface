@@ -1,3 +1,7 @@
 #!/usr/bin/env bash
-exit 0
+set -euo pipefail
 
+if [[ -n ${PI_USB_AUDIO_WPCTL_LOG:-} ]]; then
+    printf '%s\n' "$*" >>"$PI_USB_AUDIO_WPCTL_LOG"
+fi
+exit 0

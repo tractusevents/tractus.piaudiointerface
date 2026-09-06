@@ -56,10 +56,10 @@
 
   { "id": 10, "type": "PipeWire:Interface:Node", "info": { "props": {
     "node.name": "alsa_output.platform.uac2_1", "node.description": "UAC2_Gadget",
-    "media.class": "Audio/Sink", "api.alsa.card": 10 } } },
+    "media.class": "Audio/Sink", "alsa.card": 10, "device.id": 400 } } },
   { "id": 11, "type": "PipeWire:Interface:Node", "info": { "props": {
     "node.name": "alsa_input.platform.uac2_1", "node.description": "UAC2_Gadget",
-    "media.class": "Audio/Source", "api.alsa.card": 10 } } },
+    "media.class": "Audio/Source", "alsa.card": 10, "device.id": 400 } } },
   { "id": 1001, "type": "PipeWire:Interface:Port", "info": { "props": {
     "node.id": 10, "port.direction": "in", "port.name": "playback_FL", "audio.channel": "FL" } } },
   { "id": 1101, "type": "PipeWire:Interface:Port", "info": { "props": {
@@ -69,10 +69,10 @@
 
   { "id": 20, "type": "PipeWire:Interface:Node", "info": { "props": {
     "node.name": "alsa_output.platform.uac2_2", "node.description": "UAC2_Gadget",
-    "media.class": "Audio/Sink", "api.alsa.card": 11 } } },
+    "media.class": "Audio/Sink", "alsa.card": 11, "device.id": 100 } } },
   { "id": 21, "type": "PipeWire:Interface:Node", "info": { "props": {
     "node.name": "alsa_input.platform.uac2_2", "node.description": "UAC2_Gadget",
-    "media.class": "Audio/Source", "api.alsa.card": 11 } } },
+    "media.class": "Audio/Source", "alsa.card": 11, "device.id": 100 } } },
   { "id": 2001, "type": "PipeWire:Interface:Port", "info": { "props": {
     "node.id": 20, "port.direction": "in", "port.name": "playback_FL", "audio.channel": "FL" } } },
   { "id": 2101, "type": "PipeWire:Interface:Port", "info": { "props": {
@@ -82,10 +82,10 @@
 
   { "id": 30, "type": "PipeWire:Interface:Node", "info": { "props": {
     "node.name": "alsa_output.platform.uac2_3", "node.description": "UAC2_Gadget",
-    "media.class": "Audio/Sink", "api.alsa.card": 12 } } },
+    "media.class": "Audio/Sink", "alsa.card": 12, "device.id": 300 } } },
   { "id": 31, "type": "PipeWire:Interface:Node", "info": { "props": {
     "node.name": "alsa_input.platform.uac2_3", "node.description": "UAC2_Gadget",
-    "media.class": "Audio/Source", "api.alsa.card": 12 } } },
+    "media.class": "Audio/Source", "alsa.card": 12, "device.id": 300 } } },
   { "id": 3001, "type": "PipeWire:Interface:Port", "info": { "props": {
     "node.id": 30, "port.direction": "in", "port.name": "playback_FL", "audio.channel": "FL" } } },
   { "id": 3101, "type": "PipeWire:Interface:Port", "info": { "props": {
@@ -95,10 +95,10 @@
 
   { "id": 40, "type": "PipeWire:Interface:Node", "info": { "props": {
     "node.name": "alsa_output.platform.uac2_4", "node.description": "UAC2_Gadget",
-    "media.class": "Audio/Sink", "api.alsa.card": 13 } } },
+    "media.class": "Audio/Sink", "alsa.card": 13, "device.id": 200 } } },
   { "id": 41, "type": "PipeWire:Interface:Node", "info": { "props": {
     "node.name": "alsa_input.platform.uac2_4", "node.description": "UAC2_Gadget",
-    "media.class": "Audio/Source", "api.alsa.card": 13 } } },
+    "media.class": "Audio/Source", "alsa.card": 13, "device.id": 200 } } },
   { "id": 4001, "type": "PipeWire:Interface:Port", "info": { "props": {
     "node.id": 40, "port.direction": "in", "port.name": "playback_FL", "audio.channel": "FL" } } },
   { "id": 4101, "type": "PipeWire:Interface:Port", "info": { "props": {

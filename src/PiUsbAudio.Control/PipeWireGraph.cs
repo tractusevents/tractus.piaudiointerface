@@ -8,7 +8,11 @@ public sealed record PipeWireNode(int Id, IReadOnlyDictionary<string, string> Pr
     public string Name => Property("node.name");
     public string Description => Property("node.description", "device.description", "node.nick", "node.name");
     public string MediaClass => Property("media.class");
-    public string CardKey => Property("api.alsa.card", "api.alsa.card.id", "device.id", "node.name");
+    // PipeWire's device.id is an object ID allocated at discovery time and can
+    // reorder after a gadget rebind. The ALSA card number preserves the UAC2
+    // functions' creation order, which is the host-visible channel order.
+    public string CardKey => Property(
+        "api.alsa.pcm.card", "alsa.card", "api.alsa.card", "api.alsa.card.id", "device.id", "node.name");
 
     public string Property(params string[] names)
     {

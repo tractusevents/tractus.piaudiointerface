@@ -8,8 +8,9 @@ app="$project_root/src/PiUsbAudio.Control/bin/Debug/net10.0/PiUsbAudio.Control.d
 native_output=$(mktemp /tmp/tractus-audio-dsp-smoke.XXXXXX)
 ndi_native_output=$(mktemp /tmp/tractus-ndi-audio-smoke.XXXXXX)
 publish_output=$(mktemp -d /tmp/pi-usb-audio-standalone-smoke.XXXXXX)
+wpctl_log=$(mktemp /tmp/pi-usb-audio-wpctl-smoke.XXXXXX)
 standalone_app="$publish_output/PiUsbAudio.Control"
-trap 'rm -f "$native_output" "$ndi_native_output"; rm -rf "$publish_output"' EXIT
+trap 'rm -f "$native_output" "$ndi_native_output" "$wpctl_log"; rm -rf "$publish_output"' EXIT
 
 bash -n "$project_root/scripts/pi-usb-audio-gadget" \
     "$project_root/scripts/pi-usb-audio-diagnose" \
@@ -59,8 +60,23 @@ cc -std=c11 -O2 -Wall -Wextra -Werror -I"$ndi_sdk_dir/include" \
     $(pkg-config --cflags --libs libpipewire-0.3)
 
 export PATH="$project_root/tests/fake-bin:$PATH"
+export PI_USB_AUDIO_WPCTL_LOG="$wpctl_log"
 list_output=$("$dotnet_bin" "$app" list)
 grep -q 'Example USB Capture' <<<"$list_output"
+for mapping in \
+    'alsa_output.platform.uac2_1:10' \
+    'alsa_output.platform.uac2_2:11' \
+    'alsa_output.platform.uac2_3:12' \
+    'alsa_output.platform.uac2_4:13'; do
+    node_name=${mapping%:*}
+    card_key=${mapping##*:}
+    awk -v node_name="$node_name" -v card_key="$card_key" '
+        index($0, "\"Name\": \"" node_name "\"") { in_node = 1 }
+        in_node && index($0, "\"CardKey\": \"" card_key "\"") { found = 1; exit }
+        in_node && /"Ports":/ { exit }
+        END { exit found ? 0 : 1 }
+    ' <<<"$list_output"
+done
 standalone_list_output=$(env \
     DOTNET_ROOT=/nonexistent \
     DOTNET_ROOT_ARM64=/nonexistent \
@@ -90,6 +106,7 @@ apply_output=$("$dotnet_bin" "$app" apply --config "$project_root/tests/router.j
 grep -q '"GadgetCount": 4' <<<"$apply_output"
 grep -q '"LinksCreated": 17' <<<"$apply_output"
 grep -q '"Success": true' <<<"$apply_output"
+grep -qx 'set-volume --limit 1.5000 10 1.5000' "$wpctl_log"
 
 ndi_apply_output=$("$dotnet_bin" "$app" apply --config "$project_root/tests/router-ndi.json")
 grep -q '"GadgetCount": 4' <<<"$ndi_apply_output"
