@@ -27,6 +27,7 @@ grep -q 'action.lookup("verb") === "restart"' \
     "$project_root/config/50-pi-usb-audio-gadget.rules.in"
 grep -q 'subject.user === "@TARGET_USER@"' \
     "$project_root/config/50-pi-usb-audio-gadget.rules.in"
+"$dotnet_bin" run --project "$project_root/tests/KeyboardTests/KeyboardTests.csproj"
 "$dotnet_bin" restore "$control_project" --runtime linux-arm64
 "$dotnet_bin" build "$control_project" --no-restore
 "$dotnet_bin" publish "$control_project" \
@@ -104,19 +105,37 @@ grep -q 'friendlyName must be at most 64 UTF-8 bytes' <<<"$invalid_friendly_name
 
 apply_output=$("$dotnet_bin" "$app" apply --config "$project_root/tests/router.json")
 grep -q '"GadgetCount": 4' <<<"$apply_output"
-grep -q '"LinksCreated": 17' <<<"$apply_output"
+grep -q '"LinksCreated": 23' <<<"$apply_output"
 grep -q '"Success": true' <<<"$apply_output"
 grep -qx 'set-volume --limit 1.5000 10 1.5000' "$wpctl_log"
 
+for missing_direction in capture playback; do
+    if missing_output=$("$dotnet_bin" "$app" apply \
+        --config "$project_root/tests/router-missing-$missing_direction.json"); then
+        printf 'Expected missing configured %s device to report a routing failure.\n' "$missing_direction" >&2
+        exit 1
+    fi
+    grep -q '"Success": false' <<<"$missing_output"
+    grep -q '"GadgetCount": 4' <<<"$missing_output"
+    grep -q 'device is unavailable' <<<"$missing_output"
+    # The available direction must continue to route despite the other device
+    # being absent: four mic feeds, or eight USB + sidetone/NDI/output links.
+    if [[ "$missing_direction" == playback ]]; then
+        grep -q '"LinksCreated": 4' <<<"$missing_output"
+    else
+        grep -q '"LinksCreated": 18' <<<"$missing_output"
+    fi
+done
+
 ndi_apply_output=$("$dotnet_bin" "$app" apply --config "$project_root/tests/router-ndi.json")
 grep -q '"GadgetCount": 4' <<<"$ndi_apply_output"
-grep -q '"LinksCreated": 18' <<<"$ndi_apply_output"
+grep -q '"LinksCreated": 26' <<<"$ndi_apply_output"
 grep -q '"Success": true' <<<"$ndi_apply_output"
 
 ndi_receiver_apply_output=$("$dotnet_bin" "$app" apply \
     --config "$project_root/tests/router-ndi-receiver.json")
 grep -q '"GadgetCount": 4' <<<"$ndi_receiver_apply_output"
-grep -q '"LinksCreated": 17' <<<"$ndi_receiver_apply_output"
+grep -q '"LinksCreated": 23' <<<"$ndi_receiver_apply_output"
 grep -q '"Success": true' <<<"$ndi_receiver_apply_output"
 
 if invalid_receiver_output=$("$dotnet_bin" "$app" apply \

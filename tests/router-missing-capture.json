@@ -1,0 +1,4 @@
+{
+  "physicalCaptureNode": "alsa_input.usb.disconnected",
+  "physicalPlaybackNode": "alsa_output.usb.example"
+}

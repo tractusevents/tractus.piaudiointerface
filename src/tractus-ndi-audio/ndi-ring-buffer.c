@@ -94,6 +94,35 @@ void tractus_ndi_stereo_clear(struct tractus_ndi_stereo_ring *ring)
     atomic_store_explicit(&ring->read_position, write_position, memory_order_release);
 }
 
+void tractus_ndi_stereo_push(
+    struct tractus_ndi_stereo_ring *ring,
+    float *const sources[TRACTUS_NDI_CHANNEL_COUNT],
+    uint32_t count)
+{
+    uint64_t write_position = atomic_load_explicit(
+        &ring->write_position, memory_order_relaxed);
+    uint64_t read_position = atomic_load_explicit(
+        &ring->read_position, memory_order_acquire);
+    uint64_t free_samples = TRACTUS_NDI_RECEIVE_RING_CAPACITY -
+        (write_position - read_position);
+    uint32_t writable = count <= free_samples ? count : (uint32_t)free_samples;
+    for (unsigned channel = 0; channel < TRACTUS_NDI_CHANNEL_COUNT; channel++) {
+        if (sources[channel] == NULL)
+            continue;
+        for (uint32_t sample = 0; sample < writable; sample++) {
+            ring->samples[channel]
+                [(write_position + sample) & TRACTUS_NDI_RECEIVE_RING_MASK] =
+                sources[channel][sample];
+        }
+    }
+    atomic_store_explicit(
+        &ring->write_position, write_position + writable, memory_order_release);
+    if (writable < count) {
+        atomic_fetch_add_explicit(
+            &ring->overruns, count - writable, memory_order_relaxed);
+    }
+}
+
 void tractus_ndi_stereo_push_frame(
     struct tractus_ndi_stereo_ring *ring,
     const NDIlib_audio_frame_v3_t *frame,
@@ -169,4 +198,16 @@ void tractus_ndi_stereo_pop(
         atomic_fetch_add_explicit(
             &ring->underruns, count - readable, memory_order_relaxed);
     }
+}
+
+void tractus_ndi_stereo_discard(struct tractus_ndi_stereo_ring *ring, uint32_t count)
+{
+    uint64_t read_position = atomic_load_explicit(
+        &ring->read_position, memory_order_relaxed);
+    uint64_t write_position = atomic_load_explicit(
+        &ring->write_position, memory_order_acquire);
+    uint64_t readable = write_position - read_position;
+    uint64_t discarded = count <= readable ? count : readable;
+    atomic_store_explicit(
+        &ring->read_position, read_position + discarded, memory_order_release);
 }

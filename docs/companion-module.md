@@ -32,6 +32,8 @@ method to `POST`, leave the request body empty, and use URLs such as:
 | Sidetone on | `http://192.168.1.91:5055/api/sidetone/unmute` |
 | Sidetone off | `http://192.168.1.91:5055/api/sidetone/mute` |
 | NDI return off | `http://192.168.1.91:5055/api/ndi/receiver/disable` |
+| Output 1 NDI sender on | `http://192.168.1.91:5055/api/outputs/1/ndi/enable` |
+| NDI receiver 2 on | `http://192.168.1.91:5055/api/ndi/receivers/2/enable` |
 
 This provides actions but not authoritative button feedback. The dedicated
 module below should consume `/api/events` for feedbacks and variables.
@@ -90,6 +92,8 @@ IDs stable after release, or provide an upgrade script.
 | `set_ndi_receiver_source` | Select NDI return source | `name`: discovered source | POST `/api/ndi/receiver/source` |
 | `set_ndi_receiver_enabled` | Enable/disable NDI return | `enabled`: boolean | POST `/api/ndi/receiver/enable` or `/disable` |
 | `set_ndi_receiver_gain` | Set NDI return level | `percent`: 0-150 | POST `/api/ndi/receiver/gain` |
+| `set_ndi_output_enabled` | Enable/disable an output NDI sender | `device`: 1-4; `enabled`: boolean | POST `/api/outputs/{device}/ndi/enable` or `/disable` |
+| `set_indexed_ndi_receiver` | Configure one of four NDI returns | `receiver`: 1-4; source/enabled/gain values | Use `/api/ndi/receivers/{receiver}` endpoints |
 
 After every successful action, parse the returned control state immediately,
 update variables, and recheck affected feedbacks. Do not wait for the next SSE
@@ -200,7 +204,7 @@ Provide these presets in the first release:
 
 - eight stateful mute buttons: Mic 1-4 and Output 1-4;
 - four exclusive Solo buttons and Clear All Solos;
-- Ducking Enable/Bypass and trigger toggles for Self/Output 1-4;
+- Ducking Enable/Bypass and trigger toggles for Self, Output 1-4, and NDI 1-4;
 - Mute All Mics and Unmute All Mics;
 - Mute All Outputs and Unmute All Outputs;
 - Master 0%, 50%, and 100%;

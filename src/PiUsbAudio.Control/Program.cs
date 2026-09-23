@@ -7,6 +7,55 @@ var configPath = GetOption(args, "--config") ??
     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
         ".config", "pi-usb-audio", "router.json");
 
+if (command == "keyboard-hid")
+{
+    try
+    {
+        var devices = MiniKeyboardHid.Enumerate();
+        var path = GetOption(args, "--path");
+        if (path is null)
+        {
+            Console.WriteLine(JsonSerializer.Serialize(devices));
+            return;
+        }
+        var device = devices.SingleOrDefault(device => device.Path == path)
+            ?? throw new IOException("Select a listed, supported configuration interface with --path.");
+        using var keyboard = new MiniKeyboardHid(device);
+        if (GetOption(args, "--color") is { } color)
+        {
+            if (color is not "red" and not "green")
+                throw new ArgumentException("--color must be red or green.");
+            var layer = int.Parse(GetOption(args, "--layer") ?? "1");
+            keyboard.SetColor(layer, color == "red", args.Contains("--commit"));
+            Console.WriteLine($"Sent {color} to {path}, layer {layer}, commit={args.Contains("--commit")}.");
+        }
+        else
+        {
+            var model = keyboard.QueryModel();
+            Console.WriteLine($"Model report ({model.Length} bytes): {Convert.ToHexString(model)}");
+            if (GetOption(args, "--backup") is { } backupPath)
+            {
+                var reports = Enumerable.Range(1, 3).ToDictionary(layer => layer,
+                    layer => keyboard.ReadLayer(layer).Select(report => Convert.ToHexString(report)).ToArray());
+                var complete = reports.Values.All(layer => layer.Length == 24 && layer.All(report => report.Length >= 102));
+                // Never overwrite an earlier hardware backup.
+                using var backup = File.Open(backupPath, FileMode.CreateNew, FileAccess.Write);
+                JsonSerializer.Serialize(backup, new { device, model = Convert.ToHexString(model), complete, reports },
+                    new JsonSerializerOptions { WriteIndented = true });
+                Console.WriteLine($"Saved raw configuration reports to {backupPath}. Complete={complete}; layer counts={string.Join(",", reports.Values.Select(layer => layer.Length))}.");
+                if (!complete)
+                    Environment.ExitCode = 1;
+            }
+        }
+    }
+    catch (Exception exception)
+    {
+        Console.Error.WriteLine(exception.Message);
+        Environment.ExitCode = 1;
+    }
+    return;
+}
+
 if (command == "gadget-names")
 {
     var configuration = await new ConfigStore(configPath).LoadAsync();
@@ -55,7 +104,7 @@ if (command is "list" or "apply")
 
 if (command != "serve")
 {
-    Console.Error.WriteLine("Usage: PiUsbAudio.Control [serve|list|apply|gadget-names] [--config PATH]");
+    Console.Error.WriteLine("Usage: PiUsbAudio.Control [serve|list|apply|gadget-names|keyboard-hid] [--config PATH]");
     Environment.ExitCode = 2;
     return;
 }
@@ -83,6 +132,8 @@ builder.Services.AddSingleton<RouterControl>();
 builder.Services.AddSingleton<LinuxInputDeviceCatalog>();
 builder.Services.AddSingleton<LinuxInputControlService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<LinuxInputControlService>());
+builder.Services.AddSingleton<KeyboardLedService>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<KeyboardLedService>());
 builder.Services.AddHostedService<RouterReconciler>();
 builder.Services.AddSingleton<SerialControlService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<SerialControlService>());
@@ -100,10 +151,11 @@ app.MapGet("/api/info", () => Results.Ok(new
     capabilities = new[]
     {
         "ducking", "multi-trigger-ducking", "self-ducking", "solo", "push-meters", "server-sent-events",
-        "sidetone", "ndi-audio", "ndi-audio-receiver", "ndi-source-discovery",
+        "sidetone", "ndi-audio", "ndi-output-senders", "ndi-audio-receivers", "ndi-source-discovery",
         "push-ndi-status", "push-ndi-sources", "usb-gadget-diagnostics",
         "linux-input-controls", "user-input-mapping", "push-to-talk", "jog-volume",
-        "friendly-channel-names", "usb-descriptor-names", "usb-gadget-restart"
+        "friendly-channel-names", "usb-descriptor-names", "usb-gadget-restart",
+        "double-click-latch", "keyboard-led-feedback"
     }
 }));
 
@@ -169,11 +221,13 @@ app.MapPost("/api/devices/{number:int}/name", async (
 app.MapGet("/api/control-devices", async (
     ConfigStore store,
     LinuxInputControlService inputControls,
+    KeyboardLedService keyboardLeds,
     CancellationToken cancellationToken) => Results.Ok(new
 {
     devices = inputControls.DiscoverDevices(),
     configuration = (await store.LoadAsync(cancellationToken)).KeyboardControl,
-    status = inputControls.Status
+    status = inputControls.Status,
+    ledStatus = keyboardLeds.Status
 }));
 
 app.MapPut("/api/control-devices/config", async (
@@ -257,6 +311,12 @@ app.MapPost("/api/outputs/unmute-all", async (
 app.MapPost("/api/outputs/{number:int}/gain", async (
     int number, double percent, RouterControl control, CancellationToken cancellationToken) =>
     Results.Ok(await control.SetOutputGainAsync(number, percent / 100.0, cancellationToken)));
+app.MapPost("/api/outputs/{number:int}/ndi/enable", async (
+    int number, RouterControl control, CancellationToken cancellationToken) =>
+    Results.Ok(await control.SetNdiOutputEnabledAsync(number, true, cancellationToken)));
+app.MapPost("/api/outputs/{number:int}/ndi/disable", async (
+    int number, RouterControl control, CancellationToken cancellationToken) =>
+    Results.Ok(await control.SetNdiOutputEnabledAsync(number, false, cancellationToken)));
 app.MapPost("/api/outputs/{number:int}/solo", async (
     int number, RouterControl control, CancellationToken cancellationToken) =>
     Results.Ok(await control.SetOutputSoloAsync(number, true, false, cancellationToken)));
@@ -347,6 +407,8 @@ app.MapGet("/api/ndi/status", (ControlEventBus eventBus) =>
     eventBus.LastNdi is { } ndi ? Results.Ok(ndi) : Results.NoContent());
 app.MapGet("/api/ndi/receiver", async (ConfigStore store, CancellationToken cancellationToken) =>
     Results.Ok((await store.LoadAsync(cancellationToken)).NdiReceiver));
+app.MapGet("/api/ndi/receivers", async (ConfigStore store, CancellationToken cancellationToken) =>
+    Results.Ok((await store.LoadAsync(cancellationToken)).NdiReceivers));
 app.MapPut("/api/ndi/receiver", async (
     NdiReceiverConfiguration receiver,
     RouterControl control,
@@ -364,6 +426,27 @@ app.MapPost("/api/ndi/receiver/source", async (
 app.MapPost("/api/ndi/receiver/gain", async (
     double percent, RouterControl control, CancellationToken cancellationToken) =>
     Results.Ok(await control.SetNdiReceiverGainAsync(percent / 100.0, cancellationToken)));
+app.MapGet("/api/ndi/receivers/{number:int}", async (
+    int number, ConfigStore store, CancellationToken cancellationToken) =>
+    Results.Ok((await store.LoadAsync(cancellationToken)).NdiReceivers.Single(receiver => receiver.Number == number)));
+app.MapPut("/api/ndi/receivers/{number:int}", async (
+    int number,
+    NdiReceiverConfiguration receiver,
+    RouterControl control,
+    CancellationToken cancellationToken) =>
+    Results.Ok(await control.SetNdiReceiverConfigurationAsync(number, receiver, cancellationToken)));
+app.MapPost("/api/ndi/receivers/{number:int}/enable", async (
+    int number, RouterControl control, CancellationToken cancellationToken) =>
+    Results.Ok(await control.SetNdiReceiverEnabledAsync(number, true, cancellationToken)));
+app.MapPost("/api/ndi/receivers/{number:int}/disable", async (
+    int number, RouterControl control, CancellationToken cancellationToken) =>
+    Results.Ok(await control.SetNdiReceiverEnabledAsync(number, false, cancellationToken)));
+app.MapPost("/api/ndi/receivers/{number:int}/source", async (
+    int number, string name, RouterControl control, CancellationToken cancellationToken) =>
+    Results.Ok(await control.SetNdiReceiverSourceAsync(number, name, cancellationToken)));
+app.MapPost("/api/ndi/receivers/{number:int}/gain", async (
+    int number, double percent, RouterControl control, CancellationToken cancellationToken) =>
+    Results.Ok(await control.SetNdiReceiverGainAsync(number, percent / 100.0, cancellationToken)));
 app.MapGet("/api/ndi/sources", (ControlEventBus eventBus) =>
     Results.Ok(eventBus.LastNdiSources ?? new NdiSourceList(
         DateTimeOffset.UtcNow, 0, Array.Empty<string>())));
@@ -377,6 +460,7 @@ app.MapGet("/api/events", async (
     RouterControl control,
     ConfigStore store,
     LinuxInputControlService inputControls,
+    KeyboardLedService keyboardLeds,
     ControlEventBus eventBus) =>
 {
     context.Response.Headers.CacheControl = "no-cache";
@@ -398,6 +482,7 @@ app.MapGet("/api/events", async (
         if (eventBus.LastNdiSources is { } ndiSources)
             await WriteEventAsync(context, "ndi-sources", ndiSources, eventJsonOptions);
         await WriteEventAsync(context, "controls", inputControls.Status, eventJsonOptions);
+        await WriteEventAsync(context, "keyboard-led", keyboardLeds.Status, eventJsonOptions);
         await WriteEventAsync(
             context,
             "control-configuration",

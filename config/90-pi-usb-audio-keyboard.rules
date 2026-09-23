@@ -1,0 +1,4 @@
+# Configuration/feedback access for the supported mini-keyboards. The service
+# uses hidapi-hidraw and opens only USB interface 0 of selected input devices.
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1189", ATTRS{idProduct}=="8842|8840|8830|8831|8832|8833|8850", GROUP="input", MODE="0660"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="514c", ATTRS{idProduct}=="8842|8840|8830|8831|8832|8833|8850|8851", GROUP="input", MODE="0660"

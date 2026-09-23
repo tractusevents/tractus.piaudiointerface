@@ -44,8 +44,9 @@ Command names are case-insensitive.
 | `DUCK OFF` or `DUCK BYPASS` | Bypass sidechain ducking |
 | `DUCK PRIORITY <1-4>` | Select the protected priority output |
 | `DUCK PRIORITY SELF` | Detect the local captured microphone and duck all four outputs |
+| `DUCK PRIORITY NDI<1-4>` | Use one NDI receiver as the sole detector |
 | `DUCK TRIGGERS` | Return the selected trigger-source list |
-| `DUCK TRIGGER <SELF\|1-4> <ON\|OFF>` | Add or remove one trigger source |
+| `DUCK TRIGGER <SELF\|1-4\|NDI1-NDI4> <ON\|OFF>` | Add or remove one trigger source |
 | `DUCK THRESHOLD <-90..0>` | Set threshold in dBFS |
 | `DUCK DEPTH <0..60>` | Set non-trigger attenuation in dB |
 | `DUCK ATTACK <1..2000>` | Set attack in milliseconds |
@@ -57,10 +58,12 @@ Command names are case-insensitive.
 | `NDI NAME <source name>` | Set the persisted NDI source name |
 | `NDI STATUS` | Return receiver count, mic dBFS, queue, and error counters |
 | `NDI SOURCES` | Return the current discovered NDI source list |
-| `NDI RECEIVE SOURCE <source name>` | Select the full discovered receiver source name |
-| `NDI RECEIVE ON` | Start the audio-only receiver and unmute its DSP return |
-| `NDI RECEIVE OFF` | Stop and mute the receiver |
-| `GAIN NDI <0-150>` | Set the NDI-return level in percent |
+| `NDI OUTPUT <1-4> ON` | Publish one USB output as `Audio Out (N - Friendly Name)` |
+| `NDI OUTPUT <1-4> OFF` | Stop one output sender |
+| `NDI RECEIVE <1-4> SOURCE <source name>` | Select a receiver's full discovered source name |
+| `NDI RECEIVE <1-4> ON` | Start one audio-only receiver and unmute its DSP return |
+| `NDI RECEIVE <1-4> OFF` | Stop and mute one receiver |
+| `GAIN NDI <1-4> <0-150>` | Set one NDI-return level in percent |
 
 `OUT` is accepted as an alias for `OUTPUT`. For convenience, an omitted target
 defaults to `MIC`, so `MUTE 4`, `MUTE ALL`, and `UNMUTE ALL` operate on
@@ -73,8 +76,10 @@ this serial protocol.
 NDI commands also apply and persist immediately. `NDI ON` makes the selected
 physical microphone discoverable to NDI receivers on the LAN. `NDI OFF` destroys
 the network sender; it does not change any of the four USB microphone feeds.
-The receiver commands are independent of the sender. Select a source before
-using `NDI RECEIVE ON`.
+The output and receiver commands are independent of the microphone sender.
+All four output senders and all four receivers default off. Select a source
+before enabling a receiver. The unnumbered receiver and NDI-gain forms remain
+aliases for receiver 1.
 
 ## Responses
 

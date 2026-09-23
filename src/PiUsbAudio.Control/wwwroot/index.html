@@ -54,13 +54,14 @@
     .strip-title .channel-name:hover, .strip-title .channel-name:focus { border-color: #50697c; background: #101820; outline: none; }
     .strip-number { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; color: #09131c; background: var(--blue); font-weight: 850; }
     .strip-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 9px 9px 0; }
-    .strip-buttons .solo-toggle { grid-column: 1 / -1; }
-    .route-toggle, .solo-toggle { display: grid; gap: 2px; padding: 7px 5px; min-width: 0; color: #eef5fb; font-size: .68rem; line-height: 1.05; }
-    .route-toggle strong, .solo-toggle strong { font-size: .68rem; letter-spacing: .035em; }
+    .route-toggle, .solo-toggle, .ndi-send-toggle { display: grid; gap: 2px; padding: 7px 5px; min-width: 0; color: #eef5fb; font-size: .68rem; line-height: 1.05; }
+    .route-toggle strong, .solo-toggle strong, .ndi-send-toggle strong { font-size: .68rem; letter-spacing: .035em; }
     .route-toggle.on { background: #1e6a51; }
     .route-toggle.off { background: #65343b; }
     .solo-toggle.on { background: #ac701b; color: #fff8e6; }
     .solo-toggle.off { background: #2b3946; color: #dce7f0; }
+    .ndi-send-toggle.on { background: #1f6880; color: #effbff; }
+    .ndi-send-toggle.off { background: #2b3946; color: #dce7f0; }
     .strip-body { display: grid; grid-template-columns: 1fr 1fr 72px; gap: 5px; align-items: stretch; flex: 1; padding: 12px 7px 10px; }
     .fader-control { display: flex; flex-direction: column; align-items: center; gap: 7px; color: #aebdca; font-size: .74rem; text-align: center; }
     .fader-wrap { position: relative; width: 48px; height: clamp(175px, 34vh, 320px); display: grid; place-items: center; }
@@ -122,6 +123,12 @@
     .ndi-status { font-variant-numeric: tabular-nums; color: #9eafbd; }
     .ndi-status.online { color: #74e0bd; }
     .ndi-details { color: #8fa3b5; font-size: .78rem; font-variant-numeric: tabular-nums; margin: 10px 0 0; }
+    .ndi-output-list { display: grid; gap: 7px; margin-top: 13px; }
+    .ndi-output-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding: 8px 9px; border: 1px solid #2b3946; border-radius: 7px; background: #121b22; font-size: .76rem; }
+    .ndi-output-row span:first-child { overflow-wrap: anywhere; }
+    .ndi-receiver-grid { display: grid; grid-template-columns: repeat(2, minmax(260px, 1fr)); gap: 10px; }
+    .ndi-receiver-card { padding: 11px; border: 1px solid #2b3946; border-radius: 8px; background: #121a21; }
+    .ndi-receiver-card .duck-state { margin-bottom: 10px; }
     .setup-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
     .channel-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .actions { display: flex; gap: 10px; margin-top: 16px; }
@@ -135,6 +142,7 @@
     .diagnostic-grid dd { margin: 0; overflow-wrap: anywhere; color: #e5edf3; font: .76rem ui-monospace, SFMono-Regular, Consolas, monospace; }
     .diagnostic-problems { margin: 0 0 12px; padding: 9px 11px; border: 1px solid #75444b; border-radius: 7px; background: #291a1d; color: #ffcbd0; font-size: .78rem; }
     .diagnostic-problems:empty { display: none; }
+    #routingProblems { flex-shrink: 0; white-space: pre-line; overflow-wrap: anywhere; max-height: 7em; overflow-y: auto; }
     .function-table { width: 100%; border-collapse: collapse; font-size: .75rem; }
     .function-table th, .function-table td { padding: 7px 9px; border-top: 1px solid #2c3a46; text-align: left; }
     .function-table th { color: #8295a5; font-size: .65rem; text-transform: uppercase; letter-spacing: .05em; }
@@ -163,6 +171,7 @@
       .rack-grid, .setup-grid, .control-layout { grid-template-columns: 1fr; }
       .duck-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .diagnostic-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .ndi-receiver-grid { grid-template-columns: 1fr; }
     }
     @media (max-width: 560px) {
       main { width: min(100% - 12px, 1480px); padding-top: 6px; }
@@ -206,6 +215,7 @@
         <button id="applyUsbNames" type="button" class="secondary">Apply USB Names Now</button>
       </div>
     </div>
+    <div id="routingProblems" class="diagnostic-problems" role="status" aria-live="polite"></div>
     <div class="mixer-scroll">
       <div id="devices" class="devices">
         <div id="channelDevices" class="channel-devices"></div>
@@ -289,6 +299,10 @@
               <button type="button" class="trigger-toggle" data-source="2">Out 2</button>
               <button type="button" class="trigger-toggle" data-source="3">Out 3</button>
               <button type="button" class="trigger-toggle" data-source="4">Out 4</button>
+              <button type="button" class="trigger-toggle" data-source="5">NDI 1</button>
+              <button type="button" class="trigger-toggle" data-source="6">NDI 2</button>
+              <button type="button" class="trigger-toggle" data-source="7">NDI 3</button>
+              <button type="button" class="trigger-toggle" data-source="8">NDI 4</button>
             </div>
           </div>
           <label>Threshold
@@ -323,22 +337,12 @@
           <div class="meter-track"><span class="meter-fill"></span></div>
         </div>
         <p id="ndiDetails" class="ndi-details">Queue — · underruns — · overruns —</p>
+        <div id="ndiOutputSenders" class="ndi-output-list"></div>
       </div>
 
-      <div class="subpanel">
-        <h2>NDI audio receiver</h2>
-        <div class="duck-state">
-          <button id="ndiReceiverPanelToggle" type="button" class="off">RECEIVER DISABLED</button>
-          <span id="ndiReceiverStatus" class="ndi-status">Receiver offline</span>
-        </div>
-        <label>NDI source
-          <select id="ndiReceiverSource"><option value="">No sources discovered</option></select>
-        </label>
-        <div class="meter" data-meter="ndi-receiver-native">
-          <div class="meter-label"><span>Received audio</span><span class="meter-value">-∞ dBFS</span></div>
-          <div class="meter-track"><span class="meter-fill"></span></div>
-        </div>
-        <p id="ndiReceiverDetails" class="ndi-details">Queue — · underruns — · overruns —</p>
+      <div class="subpanel" style="grid-column: 1 / -1">
+        <h2>NDI audio receivers</h2>
+        <div id="ndiReceiverCards" class="ndi-receiver-grid"></div>
       </div>
     </div>
   </section>
@@ -369,6 +373,15 @@
               <option value="3">USB Audio 3</option><option value="4">USB Audio 4</option>
             </select>
           </label>
+          <label>Double-click window (ms)
+            <input id="controlDoubleClick" type="number" min="100" max="1000" step="50" value="300">
+          </label>
+          <label class="check-label wide"><input id="controlLedEnabled" type="checkbox"> Keyboard red/green feedback</label>
+          <label>Keyboard lighting layer
+            <select id="controlLedLayer"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select>
+          </label>
+          <p class="help wide">Whole-keyboard light: red when any microphone channel 1–4 is unmuted; green when all four are muted.</p>
+          <p id="controlLedStatus" class="help wide" role="status">Keyboard LED feedback is disabled.</p>
         </div>
         <div class="actions">
           <button id="saveControls">Save controls</button>
@@ -379,15 +392,15 @@
 
       <div class="subpanel">
         <h2>Button mappings</h2>
-        <p class="help">Choose exactly what each channel button does while pressed and when released.</p>
+        <p class="help">Hold for the press action. With double-click enabled, two quick taps latch that action; the next press releases it.</p>
         <div class="mixer-scroll">
           <table class="mapping-table">
-            <thead><tr><th>Channel</th><th>Action</th><th>Input event</th></tr></thead>
+            <thead><tr><th>Channel</th><th>Action</th><th>Latch</th><th>Input event</th></tr></thead>
             <tbody>
-              <tr><td data-channel-label="1">USB Audio 1</td><td><select data-channel-action="1"><option value="none">(No Action)</option><option value="muteWhileHeld">Press: Mute, Release: Unmute</option><option value="unmuteWhileHeld">Press: Unmute, Release: Mute</option></select></td><td><div class="mapping-actions"><span class="binding-label" data-binding="channel-1">Not mapped</span><button data-learn="channel-1">Learn</button><button class="clear-binding" data-clear="channel-1">Clear</button></div></td></tr>
-              <tr><td data-channel-label="2">USB Audio 2</td><td><select data-channel-action="2"><option value="none">(No Action)</option><option value="muteWhileHeld">Press: Mute, Release: Unmute</option><option value="unmuteWhileHeld">Press: Unmute, Release: Mute</option></select></td><td><div class="mapping-actions"><span class="binding-label" data-binding="channel-2">Not mapped</span><button data-learn="channel-2">Learn</button><button class="clear-binding" data-clear="channel-2">Clear</button></div></td></tr>
-              <tr><td data-channel-label="3">USB Audio 3</td><td><select data-channel-action="3"><option value="none">(No Action)</option><option value="muteWhileHeld">Press: Mute, Release: Unmute</option><option value="unmuteWhileHeld">Press: Unmute, Release: Mute</option></select></td><td><div class="mapping-actions"><span class="binding-label" data-binding="channel-3">Not mapped</span><button data-learn="channel-3">Learn</button><button class="clear-binding" data-clear="channel-3">Clear</button></div></td></tr>
-              <tr><td data-channel-label="4">USB Audio 4</td><td><select data-channel-action="4"><option value="none">(No Action)</option><option value="muteWhileHeld">Press: Mute, Release: Unmute</option><option value="unmuteWhileHeld">Press: Unmute, Release: Mute</option></select></td><td><div class="mapping-actions"><span class="binding-label" data-binding="channel-4">Not mapped</span><button data-learn="channel-4">Learn</button><button class="clear-binding" data-clear="channel-4">Clear</button></div></td></tr>
+              <tr><td data-channel-label="1">USB Audio 1</td><td><select data-channel-action="1"><option value="none">(No Action)</option><option value="muteWhileHeld">Press: Mute, Release: Unmute</option><option value="unmuteWhileHeld">Press: Unmute, Release: Mute</option></select></td><td><label class="check-label"><input type="checkbox" data-channel-latch="1"> Double-click</label><span data-latch-status="1" class="diagnostic-state" hidden>Latched</span></td><td><div class="mapping-actions"><span class="binding-label" data-binding="channel-1">Not mapped</span><button data-learn="channel-1">Learn</button><button class="clear-binding" data-clear="channel-1">Clear</button></div></td></tr>
+              <tr><td data-channel-label="2">USB Audio 2</td><td><select data-channel-action="2"><option value="none">(No Action)</option><option value="muteWhileHeld">Press: Mute, Release: Unmute</option><option value="unmuteWhileHeld">Press: Unmute, Release: Mute</option></select></td><td><label class="check-label"><input type="checkbox" data-channel-latch="2"> Double-click</label><span data-latch-status="2" class="diagnostic-state" hidden>Latched</span></td><td><div class="mapping-actions"><span class="binding-label" data-binding="channel-2">Not mapped</span><button data-learn="channel-2">Learn</button><button class="clear-binding" data-clear="channel-2">Clear</button></div></td></tr>
+              <tr><td data-channel-label="3">USB Audio 3</td><td><select data-channel-action="3"><option value="none">(No Action)</option><option value="muteWhileHeld">Press: Mute, Release: Unmute</option><option value="unmuteWhileHeld">Press: Unmute, Release: Mute</option></select></td><td><label class="check-label"><input type="checkbox" data-channel-latch="3"> Double-click</label><span data-latch-status="3" class="diagnostic-state" hidden>Latched</span></td><td><div class="mapping-actions"><span class="binding-label" data-binding="channel-3">Not mapped</span><button data-learn="channel-3">Learn</button><button class="clear-binding" data-clear="channel-3">Clear</button></div></td></tr>
+              <tr><td data-channel-label="4">USB Audio 4</td><td><select data-channel-action="4"><option value="none">(No Action)</option><option value="muteWhileHeld">Press: Mute, Release: Unmute</option><option value="unmuteWhileHeld">Press: Unmute, Release: Mute</option></select></td><td><label class="check-label"><input type="checkbox" data-channel-latch="4"> Double-click</label><span data-latch-status="4" class="diagnostic-state" hidden>Latched</span></td><td><div class="mapping-actions"><span class="binding-label" data-binding="channel-4">Not mapped</span><button data-learn="channel-4">Learn</button><button class="clear-binding" data-clear="channel-4">Clear</button></div></td></tr>
               <tr><td>Dial down</td><td>− step</td><td><div class="mapping-actions"><span class="binding-label" data-binding="dial-decrease">Not mapped</span><button data-learn="dial-decrease">Learn</button><button class="clear-binding" data-clear="dial-decrease">Clear</button></div></td></tr>
               <tr><td>Dial up</td><td>+ step</td><td><div class="mapping-actions"><span class="binding-label" data-binding="dial-increase">Not mapped</span><button data-learn="dial-increase">Learn</button><button class="clear-binding" data-clear="dial-increase">Clear</button></div></td></tr>
               <tr><td>Dial click</td><td>Switch mic/output</td><td><div class="mapping-actions"><span class="binding-label" data-binding="dial-click">Not mapped</span><button data-learn="dial-click">Learn</button><button class="clear-binding" data-clear="dial-click">Clear</button></div></td></tr>
@@ -457,6 +470,7 @@ let ndiSources = [];
 let controlDevices = [];
 let controlConfig;
 let controlStatus;
+let ndiStatusState;
 const liveUpdates = new Map();
 const activeRequests = new Set();
 let eventSource;
@@ -498,7 +512,10 @@ function nodeLabel(node) {
 
 function fillNodeSelect(element, mediaClass, selected) {
   const candidates = nodes.filter(node => node.mediaClass === mediaClass && !node.isGadget);
-  element.innerHTML = '<option value="">Select a device…</option>' + candidates.map(node =>
+  const missingOption = selected && !candidates.some(node => node.name === selected)
+    ? `<option value="${escapeHtml(selected)}" selected>Unavailable — ${escapeHtml(selected)}</option>`
+    : '';
+  element.innerHTML = '<option value="">Select a device…</option>' + missingOption + candidates.map(node =>
     `<option value="${escapeHtml(node.name)}" ${node.name === selected ? 'selected' : ''}>${escapeHtml(nodeLabel(node))}</option>`
   ).join('');
 }
@@ -509,6 +526,10 @@ function selectedNode(element) {
 
 function fillChannelSelect(element, node, selected) {
   const ports = node?.ports || [];
+  if (!node && selected) {
+    element.innerHTML = `<option value="${escapeHtml(selected)}" selected>${escapeHtml(selected)} (device unavailable)</option>`;
+    return;
+  }
   element.innerHTML = ports.map(port => {
     const value = port.channel || port.name;
     return `<option value="${escapeHtml(value)}" ${value === selected ? 'selected' : ''}>${escapeHtml(value)} (${escapeHtml(port.name)})</option>`;
@@ -546,6 +567,33 @@ async function toggleSolo(button) {
   }
 }
 
+function paintNdiSendButton(button, enabled) {
+  if (!button) return;
+  button.className = `ndi-send-toggle ${enabled ? 'on' : 'off'}`;
+  button.setAttribute('aria-pressed', String(enabled));
+  button.title = enabled ? 'Click to stop this NDI sender' : 'Click to publish this output over NDI';
+  button.innerHTML = `<span>NDI send</span><strong>${enabled ? 'ON' : 'OFF'}</strong>`;
+}
+
+async function toggleNdiOutput(button) {
+  const number = Number(button.closest('.device').dataset.number);
+  const device = config.devices.find(value => value.number === number);
+  const enabled = !device.ndiOutputEnabled;
+  button.disabled = true;
+  try {
+    const result = await request(`/api/outputs/${number}/ndi/${enabled ? 'enable' : 'disable'}`, {
+      method: 'POST'
+    });
+    applyControlState(result);
+    reportControlResult(result,
+      `${ndiOutputName(device)} NDI sender ${enabled ? 'enabled' : 'disabled'}.`);
+  } catch (error) {
+    byId('message').textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function scheduleLiveUpdate(key, operation, immediate = false) {
   let state = liveUpdates.get(key);
   if (!state) {
@@ -562,7 +610,7 @@ function scheduleLiveUpdate(key, operation, immediate = false) {
     }
     return;
   }
-  state.timer = setTimeout(() => runLiveUpdate(key), immediate ? 0 : 90);
+  state.timer = setTimeout(() => runLiveUpdate(key), immediate ? 0 : 20);
 }
 
 async function runLiveUpdate(key) {
@@ -582,7 +630,7 @@ async function runLiveUpdate(key) {
   } finally {
     state.running = false;
     if (state.pending)
-      state.timer = setTimeout(() => runLiveUpdate(key), state.immediate ? 0 : 90);
+      state.timer = setTimeout(() => runLiveUpdate(key), state.immediate ? 0 : 20);
   }
 }
 
@@ -646,6 +694,18 @@ function updateInputUnlessActive(element, value) {
 
 function friendlyDeviceName(device) {
   return device?.friendlyName || `USB Audio ${device?.number ?? ''}`.trim();
+}
+
+function configuredReceivers() {
+  if (Array.isArray(config?.ndiReceivers) && config.ndiReceivers.length)
+    return [...config.ndiReceivers].sort((a, b) => a.number - b.number);
+  return config?.ndiReceiver ? [{ ...config.ndiReceiver, number: 1 }] : [];
+}
+
+function ndiOutputName(device) {
+  return device.friendlyName
+    ? `Audio Out (${device.number} - ${device.friendlyName})`
+    : `Audio Out (${device.number})`;
 }
 
 function paintFriendlyNames() {
@@ -735,16 +795,12 @@ function paintNdiConfiguration() {
   button.setAttribute('aria-pressed', String(ndi.enabled));
   updateInputUnlessActive(byId('ndiName'), ndi.sourceName);
 
-  const receiver = config.ndiReceiver;
-  for (const receiverButton of [byId('ndiReceiverToggle'), byId('ndiReceiverPanelToggle')]) {
-    receiverButton.className = receiverButton.id === 'ndiReceiverToggle'
-      ? `monitor-toggle ${receiver.enabled ? 'on' : 'off'}`
-      : (receiver.enabled ? 'on' : 'off');
-    receiverButton.innerHTML = receiverButton.id === 'ndiReceiverToggle'
-      ? `NDI return<br>${receiver.enabled ? 'ON' : 'OFF'}`
-      : `RECEIVER ${receiver.enabled ? 'ENABLED' : 'DISABLED'}`;
-    receiverButton.setAttribute('aria-pressed', String(receiver.enabled));
-  }
+  const receivers = configuredReceivers();
+  const receiver = receivers[0];
+  const receiverButton = byId('ndiReceiverToggle');
+  receiverButton.className = `monitor-toggle ${receiver?.enabled ? 'on' : 'off'}`;
+  receiverButton.innerHTML = `NDI 1 return<br>${receiver?.enabled ? 'ON' : 'OFF'}`;
+  receiverButton.setAttribute('aria-pressed', String(Boolean(receiver?.enabled)));
   const sidetoneButton = byId('sidetoneToggle');
   sidetoneButton.className = `monitor-toggle ${config.sidetone.enabled ? 'on' : 'off'}`;
   sidetoneButton.innerHTML = `Sidetone<br>${config.sidetone.enabled ? 'ON' : 'MUTED'}`;
@@ -753,15 +809,30 @@ function paintNdiConfiguration() {
   updateInputUnlessActive(byId('sidetoneGain'), Math.round(config.sidetone.gain * 100));
   byId('sidetoneGain').closest('[data-gain-control]').querySelector('.gain-value').textContent =
     `${Math.round(config.sidetone.gain * 100)}%`;
-  updateInputUnlessActive(byId('ndiReceiverGain'), Math.round(receiver.gain * 100));
+  updateInputUnlessActive(byId('ndiReceiverGain'), Math.round((receiver?.gain ?? 1) * 100));
   byId('ndiReceiverGain').closest('[data-gain-control]').querySelector('.gain-value').textContent =
-    `${Math.round(receiver.gain * 100)}%`;
-  fillNdiSourceSelect();
+    `${Math.round((receiver?.gain ?? 1) * 100)}%`;
+
+  for (const value of receivers) {
+    const card = document.querySelector(`[data-ndi-receiver-card="${value.number}"]`);
+    if (!card) continue;
+    const toggle = card.querySelector('.ndi-receiver-toggle');
+    toggle.className = `ndi-receiver-toggle ${value.enabled ? 'on' : 'off'}`;
+    toggle.textContent = value.enabled ? 'ENABLED' : 'DISABLED';
+    toggle.setAttribute('aria-pressed', String(value.enabled));
+    const gain = card.querySelector('.ndi-receiver-gain');
+    updateInputUnlessActive(gain, Math.round(value.gain * 100));
+    gain.closest('[data-gain-control]').querySelector('.gain-value').textContent =
+      `${Math.round(value.gain * 100)}%`;
+    fillNdiSourceSelect(value.number);
+  }
+  paintNdiOutputSenders();
 }
 
-function fillNdiSourceSelect() {
-  const select = byId('ndiReceiverSource');
-  const selected = config?.ndiReceiver?.sourceName || '';
+function fillNdiSourceSelect(number) {
+  const select = document.querySelector(`[data-ndi-receiver-source="${number}"]`);
+  if (!select) return;
+  const selected = configuredReceivers().find(receiver => receiver.number === number)?.sourceName || '';
   const choices = [...ndiSources];
   if (selected && !choices.includes(selected)) choices.unshift(selected);
   select.innerHTML = '<option value="">Select an NDI source…</option>' + choices.map(name =>
@@ -771,7 +842,22 @@ function fillNdiSourceSelect() {
 
 function applyNdiSources(list) {
   ndiSources = Array.isArray(list?.sources) ? list.sources : [];
-  fillNdiSourceSelect();
+  for (const receiver of configuredReceivers()) fillNdiSourceSelect(receiver.number);
+}
+
+function paintNdiOutputSenders() {
+  if (!config?.devices) return;
+  const statuses = ndiStatusState?.outputSenders || [];
+  byId('ndiOutputSenders').innerHTML = [...config.devices]
+    .sort((a, b) => a.number - b.number)
+    .map(device => {
+      const status = statuses.find(value => value.number === device.number);
+      const detail = status?.online
+        ? `${status.connections} receiver${status.connections === 1 ? '' : 's'} · ${status.peakDbfs.toFixed(1)} dBFS`
+        : (device.ndiOutputEnabled ? 'Starting…' : 'Off');
+      return `<div class="ndi-output-row"><span>${escapeHtml(ndiOutputName(device))}</span>` +
+        `<span class="ndi-status ${status?.online ? 'online' : ''}">${escapeHtml(detail)}</span></div>`;
+    }).join('');
 }
 
 function bindDuckingSlider(sliderId, key, endpoint, parameter, property, suffix) {
@@ -862,7 +948,9 @@ function applyMeters(meters) {
     }
   }
   paintMeter(document.querySelector('[data-meter="sidetone"]'), meters.sidetone.peakDbfs, meters.sidetone.rmsDbfs);
-  paintMeter(document.querySelector('[data-meter="ndi-return"]'), meters.ndiReceiver.peakDbfs, meters.ndiReceiver.rmsDbfs);
+  const firstNdiMeter = meters.ndiReceivers?.[0];
+  if (firstNdiMeter)
+    paintMeter(document.querySelector('[data-meter="ndi-return"]'), firstNdiMeter.peakDbfs, firstNdiMeter.rmsDbfs);
   paintMeter(document.querySelector('[data-meter="mix"]'), meters.mix.peakDbfs, meters.mix.rmsDbfs);
   const indicator = byId('duckIndicator');
   indicator.className = `duck-indicator ${meters.duckingActive ? 'active' : ''}`;
@@ -872,6 +960,7 @@ function applyMeters(meters) {
 }
 
 function applyNdiStatus(ndi) {
+  ndiStatusState = ndi;
   const status = byId('ndiStatus');
   status.className = `ndi-status ${ndi.senderOnline ? 'online' : ''}`;
   status.textContent = ndi.senderOnline
@@ -881,28 +970,36 @@ function applyNdiStatus(ndi) {
   byId('ndiDetails').textContent =
     `Queue ${ndi.queueMilliseconds.toFixed(1)} ms · underruns ${ndi.underruns} · overruns ${ndi.overruns}`;
 
-  const receiverStatus = byId('ndiReceiverStatus');
-  receiverStatus.className = `ndi-status ${ndi.receiverConnected ? 'online' : ''}`;
-  receiverStatus.textContent = ndi.receiverConnected
-    ? 'Source connected'
-    : (ndi.receiverEnabled ? 'Finding source…' : 'Receiver offline');
-  paintMeter(
-    document.querySelector('[data-meter="ndi-receiver-native"]'),
-    ndi.receiverPeakDbfs,
-    ndi.receiverRmsDbfs);
-  byId('ndiReceiverDetails').textContent =
-    `Queue ${ndi.receiverQueueMilliseconds.toFixed(1)} ms · underruns ${ndi.receiverUnderruns} · overruns ${ndi.receiverOverruns}`;
+  for (const receiver of ndi.receivers || []) {
+    const card = document.querySelector(`[data-ndi-receiver-card="${receiver.number}"]`);
+    if (!card) continue;
+    const receiverStatus = card.querySelector('.ndi-receiver-status');
+    receiverStatus.className = `ndi-status ndi-receiver-status ${receiver.connected ? 'online' : ''}`;
+    receiverStatus.textContent = receiver.connected
+      ? 'Source connected'
+      : (receiver.enabled ? 'Finding source…' : 'Receiver offline');
+    paintMeter(card.querySelector('[data-meter]'), receiver.peakDbfs, receiver.rmsDbfs);
+    card.querySelector('.ndi-receiver-details').textContent =
+      `Queue ${receiver.queueMilliseconds.toFixed(1)} ms · underruns ${receiver.underruns} · overruns ${receiver.overruns}`;
+  }
+  paintNdiOutputSenders();
 }
 
 function applyControlState(state) {
   if (!state?.configuration) return;
   config = state.configuration;
+  const routingMessages = state.routing
+    ? [...state.routing.errors, ...state.routing.warnings].join('\n')
+    : 'Checking audio connections…';
+  if (byId('routingProblems').textContent !== routingMessages)
+    byId('routingProblems').textContent = routingMessages;
   for (const card of document.querySelectorAll('.device')) {
     const device = config.devices.find(value => value.number === Number(card.dataset.number));
     if (!device) continue;
     paintRouteButton(card.querySelector('[data-kind="input"]'), device.inputEnabled);
     paintRouteButton(card.querySelector('[data-kind="output"]'), device.outputEnabled);
     paintSoloButton(card.querySelector('[data-kind="solo"]'), device.outputSolo);
+    paintNdiSendButton(card.querySelector('[data-kind="ndi"]'), device.ndiOutputEnabled);
     const inputGain = card.querySelector('.input-gain');
     const outputGain = card.querySelector('.output-gain');
     updateInputUnlessActive(inputGain, Math.round(device.inputGain * 100));
@@ -940,9 +1037,13 @@ function paintControlConfiguration(value) {
   byId('controlsEnabled').checked = value.enabled;
   updateInputUnlessActive(byId('controlGainStep'), value.gainStepPercent);
   updateInputUnlessActive(byId('controlMicTarget'), value.microphoneGainDevice);
+  updateInputUnlessActive(byId('controlDoubleClick'), value.doubleClickMilliseconds ?? 300);
+  byId('controlLedEnabled').checked = Boolean(value.ledFeedbackEnabled);
+  updateInputUnlessActive(byId('controlLedLayer'), value.ledLayer ?? 1);
   for (const channel of value.channels) {
     const select = document.querySelector(`[data-channel-action="${channel.number}"]`);
     updateInputUnlessActive(select, channel.action);
+    document.querySelector(`[data-channel-latch="${channel.number}"]`).checked = channel.doubleClickLatch !== false;
   }
   for (const label of document.querySelectorAll('[data-binding]')) {
     const binding = mappingBinding(label.dataset.binding);
@@ -974,6 +1075,9 @@ function fillControlDeviceSelect() {
 function applyControlsStatus(value) {
   if (!value) return;
   controlStatus = value;
+  document.querySelectorAll('[data-latch-status]').forEach(label => {
+    label.hidden = !(value.latchedChannels || []).includes(Number(label.dataset.latchStatus));
+  });
   const health = byId('controlHealth');
   const connected = value.enabled && value.connectedDeviceIds?.length > 0 && !value.error;
   health.className = `diagnostic-state ${connected ? 'good' : ''}`;
@@ -995,6 +1099,12 @@ function applyControlDeviceResponse(value) {
   controlDevices = value.devices || [];
   paintControlConfiguration(value.configuration);
   applyControlsStatus(value.status);
+  applyKeyboardLedStatus(value.ledStatus);
+}
+
+function applyKeyboardLedStatus(value) {
+  if (!value) return;
+  byId('controlLedStatus').textContent = value.error ? `${value.message} ${value.error}` : value.message;
 }
 
 function stopEventStream() {
@@ -1011,6 +1121,9 @@ function cancelActiveRequests() {
 function startEventStream() {
   if (eventSource || document.visibilityState === 'hidden') return;
   eventSource = new EventSource('/api/events');
+  eventSource.addEventListener('keyboard-led', event => {
+    applyKeyboardLedStatus(JSON.parse(event.data));
+  });
   eventSource.addEventListener('state', event => {
     applyControlState(JSON.parse(event.data));
   });
@@ -1050,6 +1163,8 @@ function renderDevices() {
           aria-pressed="${device.outputEnabled}"><span>Output mix</span><strong>${device.outputEnabled ? 'ON' : 'MUTED'}</strong></button>
         <button type="button" class="solo-toggle ${device.outputSolo ? 'on' : 'off'}" data-kind="solo"
           aria-pressed="${device.outputSolo}"><span>Solo</span><strong>${device.outputSolo ? 'ACTIVE' : 'OFF'}</strong></button>
+        <button type="button" class="ndi-send-toggle ${device.ndiOutputEnabled ? 'on' : 'off'}" data-kind="ndi"
+          aria-pressed="${device.ndiOutputEnabled}"><span>NDI send</span><strong>${device.ndiOutputEnabled ? 'ON' : 'OFF'}</strong></button>
       </div>
       <div class="strip-body">
         <label class="fader-control" data-gain-control>
@@ -1086,6 +1201,12 @@ function renderDevices() {
     paintSoloButton(button, button.getAttribute('aria-pressed') === 'true');
     button.addEventListener('click', () => toggleSolo(button));
   });
+  document.querySelectorAll('.ndi-send-toggle').forEach(button => {
+    const device = config.devices.find(value =>
+      value.number === Number(button.closest('.device').dataset.number));
+    paintNdiSendButton(button, device.ndiOutputEnabled);
+    button.addEventListener('click', () => toggleNdiOutput(button));
+  });
   document.querySelectorAll('#channelDevices .device').forEach(card => {
     const number = Number(card.dataset.number);
     const device = config.devices.find(value => value.number === number);
@@ -1107,6 +1228,44 @@ function renderDevices() {
     });
   });
   paintFriendlyNames();
+}
+
+function renderNdiReceivers() {
+  byId('ndiReceiverCards').innerHTML = Array.from({ length: 4 }, (_, index) => {
+    const number = index + 1;
+    return `<div class="ndi-receiver-card" data-ndi-receiver-card="${number}">
+      <div class="duck-state">
+        <button type="button" class="ndi-receiver-toggle off">DISABLED</button>
+        <span class="ndi-status ndi-receiver-status">Receiver offline</span>
+      </div>
+      <label>NDI ${number} source
+        <select data-ndi-receiver-source="${number}"><option value="">No sources discovered</option></select>
+      </label>
+      <label data-gain-control>Return level
+        <div class="gain-row">
+          <input class="ndi-receiver-gain" type="range" min="0" max="150" step="1" value="100">
+          <span class="gain-value">100%</span>
+        </div>
+      </label>
+      <div class="meter" data-meter="ndi-receiver-native-${number}">
+        <div class="meter-label"><span>Received audio</span><span class="meter-value">-∞ dBFS</span></div>
+        <div class="meter-track"><span class="meter-fill"></span></div>
+      </div>
+      <p class="ndi-details ndi-receiver-details">Queue — · underruns — · overruns —</p>
+    </div>`;
+  }).join('');
+
+  document.querySelectorAll('[data-ndi-receiver-card]').forEach(card => {
+    const number = Number(card.dataset.ndiReceiverCard);
+    card.querySelector('.ndi-receiver-toggle').addEventListener('click', () => toggleNdiReceiver(number));
+    card.querySelector('[data-ndi-receiver-source]').addEventListener('change', event =>
+      setNdiReceiverSource(number, event.target.value));
+    bindGainSlider(card.querySelector('.ndi-receiver-gain'), `ndi-receiver-${number}`,
+      `/api/ndi/receivers/${number}/gain`, value => {
+        const receiver = configuredReceivers().find(item => item.number === number);
+        if (receiver) receiver.gain = value;
+      });
+  });
 }
 
 function refreshChannels() {
@@ -1133,6 +1292,7 @@ async function load() {
       byId('masterGainValue').textContent = `${byId('masterGain').value}%`;
       refreshChannels();
       renderDevices();
+      renderNdiReceivers();
       applyControlState(state);
       paintGadget(gadget);
       applyControlDeviceResponse(controls);
@@ -1163,8 +1323,11 @@ bindGainSlider(byId('masterGain'), 'master', '/api/master/gain',
   value => { config.physicalPlaybackGain = value; });
 bindGainSlider(byId('sidetoneGain'), 'sidetone', '/api/sidetone/gain',
   value => { config.sidetone.gain = value; });
-bindGainSlider(byId('ndiReceiverGain'), 'ndi-receiver', '/api/ndi/receiver/gain',
-  value => { config.ndiReceiver.gain = value; });
+bindGainSlider(byId('ndiReceiverGain'), 'ndi-receiver-1', '/api/ndi/receivers/1/gain',
+  value => {
+    const receiver = configuredReceivers()[0];
+    if (receiver) receiver.gain = value;
+  });
 
 byId('sidetoneToggle').addEventListener('click', async () => {
   const endpoint = config.sidetone.enabled ? '/api/sidetone/mute' : '/api/sidetone/unmute';
@@ -1177,31 +1340,33 @@ byId('sidetoneToggle').addEventListener('click', async () => {
   }
 });
 
-async function toggleNdiReceiver() {
-  const endpoint = config.ndiReceiver.enabled ? '/api/ndi/receiver/disable' : '/api/ndi/receiver/enable';
+async function toggleNdiReceiver(number = 1) {
+  const receiver = configuredReceivers().find(value => value.number === number);
+  const endpoint = `/api/ndi/receivers/${number}/${receiver?.enabled ? 'disable' : 'enable'}`;
   try {
     const result = await request(endpoint, { method: 'POST' });
     applyControlState(result);
-    reportControlResult(result, `NDI receiver ${config.ndiReceiver.enabled ? 'enabled' : 'disabled'}.`);
+    reportControlResult(result, `NDI receiver ${number} ${receiver?.enabled ? 'disabled' : 'enabled'}.`);
   } catch (error) {
     byId('message').textContent = error.message;
   }
 }
-byId('ndiReceiverToggle').addEventListener('click', toggleNdiReceiver);
-byId('ndiReceiverPanelToggle').addEventListener('click', toggleNdiReceiver);
-byId('ndiReceiverSource').addEventListener('change', async event => {
-  const name = event.target.value;
+byId('ndiReceiverToggle').addEventListener('click', () => toggleNdiReceiver(1));
+
+async function setNdiReceiverSource(number, name) {
   try {
-    const result = await request(`/api/ndi/receiver/source?name=${encodeURIComponent(name)}`, {
+    const result = await request(`/api/ndi/receivers/${number}/source?name=${encodeURIComponent(name)}`, {
       method: 'POST'
     });
     applyControlState(result);
-    reportControlResult(result, name ? `NDI receiver source set to ${name}.` : 'NDI receiver source cleared.');
+    reportControlResult(result, name
+      ? `NDI receiver ${number} source set to ${name}.`
+      : `NDI receiver ${number} source cleared.`);
   } catch (error) {
-    fillNdiSourceSelect();
+    fillNdiSourceSelect(number);
     byId('message').textContent = error.message;
   }
-});
+}
 byId('duckToggle').addEventListener('click', async () => {
   const endpoint = config.ducking.enabled ? '/api/ducking/bypass' : '/api/ducking/enable';
   try {
@@ -1264,7 +1429,8 @@ document.querySelectorAll('.trigger-toggle').forEach(button => {
         `/api/ducking/triggers/${source}/${enabled ? 'disable' : 'enable'}`,
         { method: 'POST' });
       applyControlState(result);
-      reportControlResult(result, `${source === 0 ? 'Self' : `Output ${source}`} trigger ${enabled ? 'disabled' : 'enabled'}.`);
+      const label = source === 0 ? 'Self' : source <= 4 ? `Output ${source}` : `NDI receiver ${source - 4}`;
+      reportControlResult(result, `${label} trigger ${enabled ? 'disabled' : 'enabled'}.`);
     } catch (error) {
       byId('message').textContent = error.message;
     }
@@ -1286,9 +1452,13 @@ byId('saveControls').addEventListener('click', async () => {
     deviceIds,
     gainStepPercent: Number(byId('controlGainStep').value),
     microphoneGainDevice: Number(byId('controlMicTarget').value),
+    doubleClickMilliseconds: Number(byId('controlDoubleClick').value),
+    ledFeedbackEnabled: byId('controlLedEnabled').checked,
+    ledLayer: Number(byId('controlLedLayer').value),
     channels: controlConfig.channels.map(channel => ({
       ...channel,
-      action: document.querySelector(`[data-channel-action="${channel.number}"]`).value
+      action: document.querySelector(`[data-channel-action="${channel.number}"]`).value,
+      doubleClickLatch: document.querySelector(`[data-channel-latch="${channel.number}"]`).checked
     }))
   };
   button.disabled = true;

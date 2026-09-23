@@ -68,7 +68,7 @@ user_systemctl() {
 if ((INSTALL_PACKAGES)); then
     apt-get update
     apt-get install -y pipewire pipewire-audio pipewire-bin wireplumber alsa-utils usbutils polkitd \
-        build-essential pkg-config libpipewire-0.3-dev libavahi-client3
+        build-essential pkg-config libpipewire-0.3-dev libavahi-client3 libhidapi-hidraw0
 fi
 
 [[ -x "$DOTNET" ]] || {
@@ -96,6 +96,8 @@ install -Dm644 "$PROJECT_ROOT/systemd/pi-usb-audio-realtime.conf" \
     "/etc/systemd/system/user@$TARGET_UID.service.d/pi-usb-audio-realtime.conf"
 install -Dm644 "$PROJECT_ROOT/config/90-pi-usb-audio-serial.rules" \
     /etc/udev/rules.d/90-pi-usb-audio-serial.rules
+install -Dm644 "$PROJECT_ROOT/config/90-pi-usb-audio-keyboard.rules" \
+    /etc/udev/rules.d/90-pi-usb-audio-keyboard.rules
 install -d -m755 /etc/polkit-1/rules.d
 sed "s/@TARGET_USER@/$TARGET_USER/g" \
     "$PROJECT_ROOT/config/50-pi-usb-audio-gadget.rules.in" \

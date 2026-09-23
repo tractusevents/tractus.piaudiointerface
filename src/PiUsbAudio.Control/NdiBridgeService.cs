@@ -29,10 +29,16 @@ public sealed class NdiBridgeService(
 
             using var socket = new Socket(AddressFamily.Unix, SocketType.Dgram, ProtocolType.Unspecified);
             var senderEnabled = configuration.NdiAudio.Enabled ? "1" : "0";
-            var receiverEnabled = configuration.NdiReceiver.Enabled ? "1" : "0";
+            var receivers = configuration.NdiReceivers.OrderBy(receiver => receiver.Number).ToArray();
+            var devices = configuration.Devices.OrderBy(device => device.Number).ToArray();
+            var flags = new[] { senderEnabled }
+                .Concat(receivers.Select(receiver => receiver.Enabled ? "1" : "0"))
+                .Concat(devices.Select(device => device.NdiOutputEnabled ? "1" : "0"));
+            var names = new[] { configuration.NdiAudio.SourceName }
+                .Concat(receivers.Select(receiver => receiver.SourceName))
+                .Concat(devices.Select(UsbChannelNames.NdiOutputName));
             var payload = Encoding.UTF8.GetBytes(
-                $"SET2 {senderEnabled} {receiverEnabled}\n" +
-                $"{configuration.NdiAudio.SourceName}\n{configuration.NdiReceiver.SourceName}");
+                $"SET3 {string.Join(' ', flags)}\n{string.Join('\n', names)}");
             socket.SendTo(payload, SocketFlags.None, new UnixDomainSocketEndPoint(serverPath));
             return Task.FromResult(NdiApplyResult.Ok);
         }
@@ -135,26 +141,53 @@ public sealed class NdiBridgeService(
     private static bool TryParseStatus(string message, out NdiAudioStatus status)
     {
         status = default!;
-        var words = message.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (words.Length != 17 || !string.Equals(words[0], "NDI", StringComparison.Ordinal))
+        var lines = message.Replace("\r", string.Empty, StringComparison.Ordinal).Split('\n');
+        var header = SplitWords(lines.ElementAtOrDefault(0));
+        var mic = SplitWords(lines.ElementAtOrDefault(1));
+        if (lines.Length < 10 || header.Length != 2 ||
+            !string.Equals(header[0], "NDI3", StringComparison.Ordinal) ||
+            mic.Length != 9 || !string.Equals(mic[0], "MIC", StringComparison.Ordinal))
             return false;
-        if (!ulong.TryParse(words[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var sequence) ||
-            !int.TryParse(words[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var enabled) ||
-            !int.TryParse(words[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out var online) ||
-            !int.TryParse(words[4], NumberStyles.Integer, CultureInfo.InvariantCulture, out var connections) ||
-            !TryDouble(words[5], out var peak) ||
-            !TryDouble(words[6], out var rms) ||
-            !TryDouble(words[7], out var queue) ||
-            !ulong.TryParse(words[8], NumberStyles.Integer, CultureInfo.InvariantCulture, out var underruns) ||
-            !ulong.TryParse(words[9], NumberStyles.Integer, CultureInfo.InvariantCulture, out var overruns) ||
-            !int.TryParse(words[10], NumberStyles.Integer, CultureInfo.InvariantCulture, out var receiverEnabled) ||
-            !int.TryParse(words[11], NumberStyles.Integer, CultureInfo.InvariantCulture, out var receiverConnected) ||
-            !TryDouble(words[12], out var receiverPeak) ||
-            !TryDouble(words[13], out var receiverRms) ||
-            !TryDouble(words[14], out var receiverQueue) ||
-            !ulong.TryParse(words[15], NumberStyles.Integer, CultureInfo.InvariantCulture, out var receiverUnderruns) ||
-            !ulong.TryParse(words[16], NumberStyles.Integer, CultureInfo.InvariantCulture, out var receiverOverruns))
+        if (!ulong.TryParse(header[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var sequence) ||
+            !int.TryParse(mic[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var enabled) ||
+            !int.TryParse(mic[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var online) ||
+            !int.TryParse(mic[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out var connections) ||
+            !TryDouble(mic[4], out var peak) || !TryDouble(mic[5], out var rms) ||
+            !TryDouble(mic[6], out var queue) ||
+            !ulong.TryParse(mic[7], NumberStyles.Integer, CultureInfo.InvariantCulture, out var underruns) ||
+            !ulong.TryParse(mic[8], NumberStyles.Integer, CultureInfo.InvariantCulture, out var overruns))
             return false;
+
+        var outputSenders = new List<NdiSenderStatus>(RouterConfiguration.NdiReceiverCount);
+        var receivers = new List<NdiReceiverStatus>(RouterConfiguration.NdiReceiverCount);
+        for (var index = 0; index < RouterConfiguration.NdiReceiverCount; index++)
+        {
+            var words = SplitWords(lines[index + 2]);
+            if (words.Length != 10 || !string.Equals(words[0], "OUT", StringComparison.Ordinal) ||
+                !TryInt(words[1], out var number) || !TryInt(words[2], out var senderEnabled) ||
+                !TryInt(words[3], out var senderOnline) || !TryInt(words[4], out var senderConnections) ||
+                !TryDouble(words[5], out var senderPeak) || !TryDouble(words[6], out var senderRms) ||
+                !TryDouble(words[7], out var senderQueue) ||
+                !ulong.TryParse(words[8], NumberStyles.Integer, CultureInfo.InvariantCulture, out var senderUnderruns) ||
+                !ulong.TryParse(words[9], NumberStyles.Integer, CultureInfo.InvariantCulture, out var senderOverruns))
+                return false;
+            outputSenders.Add(new NdiSenderStatus(number, senderEnabled != 0, senderOnline != 0,
+                senderConnections, senderPeak, senderRms, senderQueue, senderUnderruns, senderOverruns));
+        }
+        for (var index = 0; index < RouterConfiguration.NdiReceiverCount; index++)
+        {
+            var words = SplitWords(lines[index + 6]);
+            if (words.Length != 9 || !string.Equals(words[0], "IN", StringComparison.Ordinal) ||
+                !TryInt(words[1], out var number) || !TryInt(words[2], out var receiverEnabled) ||
+                !TryInt(words[3], out var receiverConnected) ||
+                !TryDouble(words[4], out var receiverPeak) || !TryDouble(words[5], out var receiverRms) ||
+                !TryDouble(words[6], out var receiverQueue) ||
+                !ulong.TryParse(words[7], NumberStyles.Integer, CultureInfo.InvariantCulture, out var receiverUnderruns) ||
+                !ulong.TryParse(words[8], NumberStyles.Integer, CultureInfo.InvariantCulture, out var receiverOverruns))
+                return false;
+            receivers.Add(new NdiReceiverStatus(number, receiverEnabled != 0, receiverConnected != 0,
+                receiverPeak, receiverRms, receiverQueue, receiverUnderruns, receiverOverruns));
+        }
 
         status = new NdiAudioStatus(
             DateTimeOffset.UtcNow,
@@ -167,15 +200,17 @@ public sealed class NdiBridgeService(
             queue,
             underruns,
             overruns,
-            receiverEnabled != 0,
-            receiverConnected != 0,
-            receiverPeak,
-            receiverRms,
-            receiverQueue,
-            receiverUnderruns,
-            receiverOverruns);
+            outputSenders,
+            receivers);
         return true;
     }
+
+    private static string[] SplitWords(string? value) =>
+        (value ?? string.Empty).Split(
+            ' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    private static bool TryInt(string value, out int result) =>
+        int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
 
     private static bool TryParseSources(string message, out NdiSourceList sources)
     {

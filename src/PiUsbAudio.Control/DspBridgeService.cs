@@ -148,8 +148,11 @@ public sealed class DspBridgeService(
         }
         Append(builder, configuration.Sidetone.Enabled ? 1 : 0);
         Append(builder, configuration.Sidetone.Gain);
-        Append(builder, configuration.NdiReceiver.Enabled ? 1 : 0);
-        Append(builder, configuration.NdiReceiver.Gain);
+        foreach (var receiver in configuration.NdiReceivers.OrderBy(receiver => receiver.Number))
+        {
+            Append(builder, receiver.Enabled ? 1 : 0);
+            Append(builder, receiver.Gain);
+        }
         return builder.ToString();
     }
 
@@ -163,7 +166,7 @@ public sealed class DspBridgeService(
     {
         meters = default!;
         var words = message.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (words.Length != 18 || !string.Equals(words[0], "METER", StringComparison.Ordinal))
+        if (words.Length != 24 || !string.Equals(words[0], "METER2", StringComparison.Ordinal))
             return false;
         if (!long.TryParse(words[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var sequence) ||
             !int.TryParse(words[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var active) ||
@@ -179,11 +182,19 @@ public sealed class DspBridgeService(
             devices.Add(new DspDeviceMeter(device + 1, peak, rms));
         }
         if (!TryDouble(words[12], out var sidetonePeak) ||
-            !TryDouble(words[13], out var sidetoneRms) ||
-            !TryDouble(words[14], out var ndiReceiverPeak) ||
-            !TryDouble(words[15], out var ndiReceiverRms) ||
-            !TryDouble(words[16], out var mixPeak) ||
-            !TryDouble(words[17], out var mixRms))
+            !TryDouble(words[13], out var sidetoneRms))
+            return false;
+
+        var receivers = new List<DspMixMeter>(RouterConfiguration.NdiReceiverCount);
+        for (var receiver = 0; receiver < RouterConfiguration.NdiReceiverCount; receiver++)
+        {
+            if (!TryDouble(words[14 + receiver * 2], out var peak) ||
+                !TryDouble(words[15 + receiver * 2], out var rms))
+                return false;
+            receivers.Add(new DspMixMeter(peak, rms));
+        }
+        if (!TryDouble(words[22], out var mixPeak) ||
+            !TryDouble(words[23], out var mixRms))
             return false;
 
         meters = new DspMeterState(
@@ -193,7 +204,7 @@ public sealed class DspBridgeService(
             reduction,
             devices,
             new DspMixMeter(sidetonePeak, sidetoneRms),
-            new DspMixMeter(ndiReceiverPeak, ndiReceiverRms),
+            receivers,
             new DspMixMeter(mixPeak, mixRms));
         return true;
     }

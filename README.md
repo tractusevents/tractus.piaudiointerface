@@ -18,12 +18,13 @@ independent gains and are mixed into the physical stereo output.
 
 A native 32-bit-float PipeWire DSP node performs the playback mix. It provides
 click-free output gain, mute and solo, priority sidechain ducking, microphone
-sidetone, an NDI return, and pushes sample-peak/RMS meter frames to the C#
+sidetone, four NDI returns, and pushes sample-peak/RMS meter frames to the C#
 control service without polling.
 
 The selected physical microphone channel can also be published as a mono,
-48 kHz NDI audio source. The native NDI node can simultaneously subscribe to
-an audio-only NDI source and return it to the physical stereo output. Dedicated
+48 kHz NDI audio source. Any of the four stereo host outputs can independently
+be published as NDI, and the native NDI node can simultaneously subscribe to
+as many as four audio-only NDI sources. Dedicated
 worker threads keep blocking NDI calls and framesync resampling off PipeWire's
 real-time thread. Sender/receiver state, discovered sources, queue health, and
 dBFS readings are pushed through the same event stream.
@@ -254,28 +255,35 @@ use a firewall or SSH tunnel when the network is not trusted. Select:
    output master level.
 
 The physical-output section also has live faders for microphone sidetone and
-the stereo NDI return. Sidetone uses the selected capture channel, duplicates
+NDI return 1; all four NDI returns have controls under **Processing & NDI**.
+Sidetone uses the selected capture channel, duplicates
 it to left and right, and is muted by default. Select an NDI source under
 **Processing & NDI** before enabling the NDI return. Both paths remain metered
 while muted.
 
 The ON/MUTED buttons apply immediately. Gain sliders coalesce changes at about
-90 ms while they are dragged, apply the final value on release, and snap to a
+20 ms while they are dragged, apply the final value on release, and snap to a
 visible 100% detent. **Save and apply** is only needed for physical device or
 channel selection changes.
 
-Ducking can use any combination of USB outputs 1-4 and **Self / local
-microphone** as triggers. The loudest selected source drives the detector.
-Selected USB trigger outputs remain at normal level while unselected USB
-outputs are ducked. Self detects the selected physical capture channel even
-when sidetone is muted.
+Ducking can use any combination of USB outputs 1-4, NDI receivers 1-4, and
+**Self / local microphone** as triggers. The loudest selected source drives the detector.
+Selected USB or NDI trigger sources remain at normal level while unselected
+USB outputs and NDI returns are ducked. Self detects the selected physical
+capture channel even when sidetone is muted.
 
 The configuration is saved in
 `/home/tractus/.config/pi-usb-audio/router.json`. `20%` is a linear amplitude of
 `0.2`, approximately -14 dB.
 
+If a configured physical audio interface disconnects, the mixer displays the
+missing-device error and preserves its saved device/channel selections. Routing
+recovers automatically when that interface returns. A missing configured device
+is reported as a routing failure, even while the four USB functions are present.
+
 Each mixer strip title is editable. A friendly name is saved immediately and
-is used in the mixer, keyboard mappings, dial target, and ducking controls. An
+is used in the mixer, keyboard mappings, dial target, ducking controls, and the
+automatic NDI output-sender name. An
 empty name restores `USB Audio N`. At the next reboot, the root gadget service
 reads the same configuration before binding USB and places a custom name such
 as `To Teams` into the UAC2 strings as
@@ -316,6 +324,32 @@ Mute**. The shipped defaults use no action for channel 1 and push-to-talk for
 channels 2-4. Active actions restore their release state when the selected
 input interface disconnects.
 
+Double-click latching is enabled by default for each channel and can be disabled
+with its **Double-click** checkbox. Two short taps within the configurable
+300 ms window hold the channel's press action after release; the next press
+unlatches immediately. Thus a push-to-talk channel stays open, while a
+press-to-mute channel stays muted. Ordinary presses/releases are immediate,
+including the brief release between the two taps. Key repeat does not count as
+a second click. The keyboard tab shows **Latched** beside active latches.
+Latches are cleared and release states restored on disconnect, configuration
+reload, and normal shutdown; latches are never restored after a restart.
+
+**Keyboard red/green feedback** is an opt-in whole-keyboard indicator for
+supported mini-keyboards. Red means any microphone channel 1–4 is unmuted;
+green means all four are muted. It follows router state, including web/API and
+serial changes, independently of whether a key is held or latched. A normally
+open channel 1 will therefore keep the keyboard red. Select the keyboard's
+active lighting layer (1–3). This is not independent per-key lighting.
+
+Feedback uses `libhidapi-hidraw0` and the supplied keyboard udev rule, opening
+only configuration interface 0 of the selected input device. The installer
+sets up both. LED failures are reported in the keyboard tab without stopping
+audio controls. Only color changes and reconnects trigger writes. Disabling
+feedback leaves the last hardware color in place.
+
+See [keyboard protocol notes](docs/keyboard-led.md) for the diagnostic command,
+color encodings, and hardware-validation limitations.
+
 The dial starts in microphone mode and changes the selected microphone send by
 2 percentage points per learned detent. The step and target channel are
 configurable. Clicking the learned dial button toggles to physical-output
@@ -351,9 +385,15 @@ counters and the sent-audio peak/RMS level are visible in the UI and API.
 NDI discovery and media are intended for a trusted LAN. Enabling the sender
 makes the microphone source discoverable to NDI receivers on that network.
 
-The receiver is also disabled by default. Its live source list is populated by
-NDI discovery without HTTP polling. After selecting a source, enable **NDI
-return** in either the mixer or Processing & NDI tab. The receiver requests
+Each output strip also has an independent **NDI send** toggle, defaulting off.
+It publishes that host-to-Pi stereo stream before the physical-output mix. The
+name is derived automatically from the channel number and friendly name, for
+example `Audio Out (1 - To Discord)`. Local output mute, solo, gain, ducking,
+and master controls do not alter this direct NDI send.
+
+All four receivers are disabled by default. Their live source lists are populated by
+NDI discovery without HTTP polling. After selecting a source, enable its **NDI
+return** under Processing & NDI (receiver 1 is also available in the mixer). Each receiver requests
 48 kHz, two-channel float audio from NDI framesync in the exact block sizes
 needed to maintain its PipeWire queue; mono sources are expanded to stereo and
 other source formats are converted by framesync. Its fader and mute state apply
@@ -390,6 +430,7 @@ The endpoints below accept `POST` and return the updated state as JSON:
 /api/outputs/1/mute              /api/outputs/1/unmute
 /api/outputs/mute-all            /api/outputs/unmute-all
 /api/outputs/1/gain?percent=20
+/api/outputs/1/ndi/enable        /api/outputs/1/ndi/disable
 /api/outputs/1/solo-exclusive    /api/outputs/1/unsolo
 /api/outputs/unsolo-all
 /api/master/gain?percent=100
@@ -398,6 +439,7 @@ The endpoints below accept `POST` and return the updated state as JSON:
 /api/ducking/threshold?dbfs=-30  /api/ducking/depth?db=18
 /api/ndi/enable                  /api/ndi/disable
 /api/ndi/name?name=Studio%20Mic
+/api/ndi/receivers/2/enable      /api/ndi/receivers/2/disable
 ```
 
 `GET /api/state` returns configuration and routing feedback. `GET /api/gadget`

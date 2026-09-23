@@ -13,6 +13,100 @@ static bool apply_command(
     char *error,
     size_t error_size)
 {
+    if (strncmp(command, "SET3 ", 5) == 0) {
+        char *first_newline = strchr(command, '\n');
+        if (first_newline == NULL) {
+            snprintf(error, error_size, "ERROR SET3 requires names");
+            return false;
+        }
+        *first_newline = '\0';
+        int sender_enabled;
+        int receiver_enabled[TRACTUS_NDI_RECEIVER_COUNT];
+        int output_enabled[TRACTUS_NDI_OUTPUT_SENDER_COUNT];
+        char extra;
+        if (sscanf(command, "SET3 %d %d %d %d %d %d %d %d %d %c",
+                &sender_enabled,
+                &receiver_enabled[0], &receiver_enabled[1],
+                &receiver_enabled[2], &receiver_enabled[3],
+                &output_enabled[0], &output_enabled[1],
+                &output_enabled[2], &output_enabled[3], &extra) != 9) {
+            snprintf(error, error_size, "ERROR invalid SET3 flags");
+            return false;
+        }
+
+        char *names[1U + TRACTUS_NDI_RECEIVER_COUNT + TRACTUS_NDI_OUTPUT_SENDER_COUNT];
+        char *cursor = first_newline + 1;
+        for (unsigned index = 0; index < sizeof(names) / sizeof(names[0]); index++) {
+            names[index] = cursor;
+            char *newline = strchr(cursor, '\n');
+            if (newline == NULL) {
+                if (index + 1U != sizeof(names) / sizeof(names[0])) {
+                    snprintf(error, error_size, "ERROR SET3 has too few names");
+                    return false;
+                }
+            } else {
+                *newline = '\0';
+                cursor = newline + 1;
+            }
+        }
+
+        if ((sender_enabled != 0 && sender_enabled != 1) ||
+            !tractus_ndi_valid_name(names[0], TRACTUS_NDI_MAX_SENDER_NAME, false)) {
+            snprintf(error, error_size, "ERROR invalid SET3 microphone sender");
+            return false;
+        }
+        for (unsigned index = 0; index < TRACTUS_NDI_RECEIVER_COUNT; index++) {
+            if ((receiver_enabled[index] != 0 && receiver_enabled[index] != 1) ||
+                !tractus_ndi_valid_name(names[1U + index],
+                    TRACTUS_NDI_MAX_RECEIVER_NAME, receiver_enabled[index] == 0)) {
+                snprintf(error, error_size, "ERROR invalid SET3 receiver %u", index + 1U);
+                return false;
+            }
+        }
+        for (unsigned index = 0; index < TRACTUS_NDI_OUTPUT_SENDER_COUNT; index++) {
+            if ((output_enabled[index] != 0 && output_enabled[index] != 1) ||
+                !tractus_ndi_valid_name(
+                    names[1U + TRACTUS_NDI_RECEIVER_COUNT + index],
+                    TRACTUS_NDI_MAX_SENDER_NAME, false)) {
+                snprintf(error, error_size, "ERROR invalid SET3 output sender %u", index + 1U);
+                return false;
+            }
+        }
+
+        pthread_mutex_lock(&data->configuration_mutex);
+        bool changed = data->configuration.sender_enabled != (sender_enabled != 0) ||
+            strcmp(data->configuration.sender_name, names[0]) != 0;
+        for (unsigned index = 0; index < TRACTUS_NDI_RECEIVER_COUNT; index++) {
+            changed = changed || data->configuration.receiver_enabled[index] !=
+                    (receiver_enabled[index] != 0) ||
+                strcmp(data->configuration.receiver_name[index], names[1U + index]) != 0;
+        }
+        for (unsigned index = 0; index < TRACTUS_NDI_OUTPUT_SENDER_COUNT; index++) {
+            const char *name = names[1U + TRACTUS_NDI_RECEIVER_COUNT + index];
+            changed = changed || data->configuration.output_sender_enabled[index] !=
+                    (output_enabled[index] != 0) ||
+                strcmp(data->configuration.output_sender_name[index], name) != 0;
+        }
+        if (changed) {
+            data->configuration.version++;
+            data->configuration.sender_enabled = sender_enabled != 0;
+            snprintf(data->configuration.sender_name,
+                sizeof(data->configuration.sender_name), "%s", names[0]);
+            for (unsigned index = 0; index < TRACTUS_NDI_RECEIVER_COUNT; index++) {
+                data->configuration.receiver_enabled[index] = receiver_enabled[index] != 0;
+                snprintf(data->configuration.receiver_name[index],
+                    sizeof(data->configuration.receiver_name[index]), "%s", names[1U + index]);
+            }
+            for (unsigned index = 0; index < TRACTUS_NDI_OUTPUT_SENDER_COUNT; index++) {
+                const char *name = names[1U + TRACTUS_NDI_RECEIVER_COUNT + index];
+                data->configuration.output_sender_enabled[index] = output_enabled[index] != 0;
+                snprintf(data->configuration.output_sender_name[index],
+                    sizeof(data->configuration.output_sender_name[index]), "%s", name);
+            }
+        }
+        pthread_mutex_unlock(&data->configuration_mutex);
+        return true;
+    }
     if (strncmp(command, "SET2 ", 5) == 0) {
         char *first_newline = strchr(command, '\n');
         if (first_newline == NULL) {
@@ -46,13 +140,18 @@ static bool apply_command(
             return false;
         }
         pthread_mutex_lock(&data->configuration_mutex);
-        data->configuration.version++;
+        bool changed = data->configuration.sender_enabled != (sender_enabled != 0) ||
+            data->configuration.receiver_enabled[0] != (receiver_enabled != 0) ||
+            strcmp(data->configuration.sender_name, sender_name) != 0 ||
+            strcmp(data->configuration.receiver_name[0], receiver_name) != 0;
+        if (changed)
+            data->configuration.version++;
         data->configuration.sender_enabled = sender_enabled != 0;
-        data->configuration.receiver_enabled = receiver_enabled != 0;
+        data->configuration.receiver_enabled[0] = receiver_enabled != 0;
         snprintf(data->configuration.sender_name,
             sizeof(data->configuration.sender_name), "%s", sender_name);
-        snprintf(data->configuration.receiver_name,
-            sizeof(data->configuration.receiver_name), "%s", receiver_name);
+        snprintf(data->configuration.receiver_name[0],
+            sizeof(data->configuration.receiver_name[0]), "%s", receiver_name);
         pthread_mutex_unlock(&data->configuration_mutex);
         return true;
     }
@@ -70,7 +169,10 @@ static bool apply_command(
             return false;
         }
         pthread_mutex_lock(&data->configuration_mutex);
-        data->configuration.version++;
+        if (data->configuration.sender_enabled != (enabled != 0) ||
+            strcmp(data->configuration.sender_name, name) != 0) {
+            data->configuration.version++;
+        }
         data->configuration.sender_enabled = enabled != 0;
         snprintf(data->configuration.sender_name,
             sizeof(data->configuration.sender_name), "%s", name);
@@ -93,25 +195,44 @@ static size_t format_status(
     pthread_mutex_unlock(&data->status_mutex);
     *sequence = status.sequence;
     int length = snprintf(buffer, buffer_size,
-        "NDI %llu %d %d %d %.2f %.2f %.2f %llu %llu %d %d %.2f %.2f %.2f "
-        "%llu %llu",
+        "NDI3 %llu\nMIC %d %d %d %.2f %.2f %.2f %llu %llu",
         (unsigned long long)status.sequence,
-        status.sender_enabled ? 1 : 0,
-        status.sender_online ? 1 : 0,
-        status.sender_connections,
-        status.sender_peak_dbfs,
-        status.sender_rms_dbfs,
-        status.sender_queue_ms,
-        (unsigned long long)status.sender_underruns,
-        (unsigned long long)status.sender_overruns,
-        status.receiver_enabled ? 1 : 0,
-        status.receiver_connected ? 1 : 0,
-        status.receiver_peak_dbfs,
-        status.receiver_rms_dbfs,
-        status.receiver_queue_ms,
-        (unsigned long long)status.receiver_underruns,
-        (unsigned long long)status.receiver_overruns);
-    return length > 0 && (size_t)length < buffer_size ? (size_t)length : 0;
+        status.sender.enabled ? 1 : 0,
+        status.sender.online ? 1 : 0,
+        status.sender.connections,
+        status.sender.peak_dbfs,
+        status.sender.rms_dbfs,
+        status.sender.queue_ms,
+        (unsigned long long)status.sender.underruns,
+        (unsigned long long)status.sender.overruns);
+    if (length < 0 || (size_t)length >= buffer_size)
+        return 0;
+    size_t used = (size_t)length;
+    for (unsigned index = 0; index < TRACTUS_NDI_OUTPUT_SENDER_COUNT; index++) {
+        struct tractus_ndi_sender_status *sender = &status.output_senders[index];
+        length = snprintf(buffer + used, buffer_size - used,
+            "\nOUT %u %d %d %d %.2f %.2f %.2f %llu %llu",
+            index + 1U, sender->enabled ? 1 : 0, sender->online ? 1 : 0,
+            sender->connections, sender->peak_dbfs, sender->rms_dbfs,
+            sender->queue_ms, (unsigned long long)sender->underruns,
+            (unsigned long long)sender->overruns);
+        if (length < 0 || (size_t)length >= buffer_size - used)
+            return 0;
+        used += (size_t)length;
+    }
+    for (unsigned index = 0; index < TRACTUS_NDI_RECEIVER_COUNT; index++) {
+        struct tractus_ndi_receiver_status *receiver = &status.receivers[index];
+        length = snprintf(buffer + used, buffer_size - used,
+            "\nIN %u %d %d %.2f %.2f %.2f %llu %llu",
+            index + 1U, receiver->enabled ? 1 : 0, receiver->connected ? 1 : 0,
+            receiver->peak_dbfs, receiver->rms_dbfs, receiver->queue_ms,
+            (unsigned long long)receiver->underruns,
+            (unsigned long long)receiver->overruns);
+        if (length < 0 || (size_t)length >= buffer_size - used)
+            return 0;
+        used += (size_t)length;
+    }
+    return used;
 }
 
 static size_t format_sources(

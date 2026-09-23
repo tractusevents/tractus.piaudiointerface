@@ -36,9 +36,21 @@
   { "id": 5011, "type": "PipeWire:Interface:Port", "info": { "props": {
     "node.id": 50, "port.direction": "in", "port.name": "input_sidetone_MONO", "audio.channel": "MONO" } } },
   { "id": 5012, "type": "PipeWire:Interface:Port", "info": { "props": {
-    "node.id": 50, "port.direction": "in", "port.name": "input_ndi_FL", "audio.channel": "FL" } } },
+    "node.id": 50, "port.direction": "in", "port.name": "input_ndi_1_FL", "audio.channel": "FL" } } },
   { "id": 5013, "type": "PipeWire:Interface:Port", "info": { "props": {
-    "node.id": 50, "port.direction": "in", "port.name": "input_ndi_FR", "audio.channel": "FR" } } },
+    "node.id": 50, "port.direction": "in", "port.name": "input_ndi_1_FR", "audio.channel": "FR" } } },
+  { "id": 5014, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 50, "port.direction": "in", "port.name": "input_ndi_2_FL", "audio.channel": "FL" } } },
+  { "id": 5015, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 50, "port.direction": "in", "port.name": "input_ndi_2_FR", "audio.channel": "FR" } } },
+  { "id": 5016, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 50, "port.direction": "in", "port.name": "input_ndi_3_FL", "audio.channel": "FL" } } },
+  { "id": 5017, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 50, "port.direction": "in", "port.name": "input_ndi_3_FR", "audio.channel": "FR" } } },
+  { "id": 5018, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 50, "port.direction": "in", "port.name": "input_ndi_4_FL", "audio.channel": "FL" } } },
+  { "id": 5019, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 50, "port.direction": "in", "port.name": "input_ndi_4_FR", "audio.channel": "FR" } } },
   { "id": 5009, "type": "PipeWire:Interface:Port", "info": { "props": {
     "node.id": 50, "port.direction": "out", "port.name": "output_FL", "audio.channel": "FL" } } },
   { "id": 5010, "type": "PipeWire:Interface:Port", "info": { "props": {
@@ -50,9 +62,37 @@
   { "id": 5101, "type": "PipeWire:Interface:Port", "info": { "props": {
     "node.id": 51, "port.direction": "in", "port.name": "input_MONO", "audio.channel": "MONO" } } },
   { "id": 5102, "type": "PipeWire:Interface:Port", "info": { "props": {
-    "node.id": 51, "port.direction": "out", "port.name": "output_FL", "audio.channel": "FL" } } },
+    "node.id": 51, "port.direction": "out", "port.name": "output_receiver_1_FL", "audio.channel": "FL" } } },
   { "id": 5103, "type": "PipeWire:Interface:Port", "info": { "props": {
-    "node.id": 51, "port.direction": "out", "port.name": "output_FR", "audio.channel": "FR" } } },
+    "node.id": 51, "port.direction": "out", "port.name": "output_receiver_1_FR", "audio.channel": "FR" } } },
+  { "id": 5104, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 51, "port.direction": "out", "port.name": "output_receiver_2_FL", "audio.channel": "FL" } } },
+  { "id": 5105, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 51, "port.direction": "out", "port.name": "output_receiver_2_FR", "audio.channel": "FR" } } },
+  { "id": 5106, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 51, "port.direction": "out", "port.name": "output_receiver_3_FL", "audio.channel": "FL" } } },
+  { "id": 5107, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 51, "port.direction": "out", "port.name": "output_receiver_3_FR", "audio.channel": "FR" } } },
+  { "id": 5108, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 51, "port.direction": "out", "port.name": "output_receiver_4_FL", "audio.channel": "FL" } } },
+  { "id": 5109, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 51, "port.direction": "out", "port.name": "output_receiver_4_FR", "audio.channel": "FR" } } },
+  { "id": 5110, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 51, "port.direction": "in", "port.name": "input_output_1_FL", "audio.channel": "FL" } } },
+  { "id": 5111, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 51, "port.direction": "in", "port.name": "input_output_1_FR", "audio.channel": "FR" } } },
+  { "id": 5112, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 51, "port.direction": "in", "port.name": "input_output_2_FL", "audio.channel": "FL" } } },
+  { "id": 5113, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 51, "port.direction": "in", "port.name": "input_output_2_FR", "audio.channel": "FR" } } },
+  { "id": 5114, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 51, "port.direction": "in", "port.name": "input_output_3_FL", "audio.channel": "FL" } } },
+  { "id": 5115, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 51, "port.direction": "in", "port.name": "input_output_3_FR", "audio.channel": "FR" } } },
+  { "id": 5116, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 51, "port.direction": "in", "port.name": "input_output_4_FL", "audio.channel": "FL" } } },
+  { "id": 5117, "type": "PipeWire:Interface:Port", "info": { "props": {
+    "node.id": 51, "port.direction": "in", "port.name": "input_output_4_FR", "audio.channel": "FR" } } },
 
   { "id": 10, "type": "PipeWire:Interface:Node", "info": { "props": {
     "node.name": "alsa_output.platform.uac2_1", "node.description": "UAC2_Gadget",

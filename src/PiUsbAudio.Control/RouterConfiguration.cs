@@ -4,6 +4,7 @@ using System.Text;
 
 public sealed class RouterConfiguration
 {
+    public const int NdiReceiverCount = 4;
     public string GadgetMatch { get; set; } = "UAC2 Gadget";
     public string PhysicalCaptureNode { get; set; } = string.Empty;
     public string PhysicalPlaybackNode { get; set; } = string.Empty;
@@ -14,7 +15,10 @@ public sealed class RouterConfiguration
     public SidetoneConfiguration Sidetone { get; set; } = new();
     public DuckingConfiguration Ducking { get; set; } = new();
     public NdiAudioConfiguration NdiAudio { get; set; } = new();
+    // Kept for compatibility with existing configuration files and API clients.
+    // NdiReceivers is authoritative once it has been populated.
     public NdiReceiverConfiguration NdiReceiver { get; set; } = new();
+    public List<NdiReceiverConfiguration> NdiReceivers { get; set; } = [];
     public KeyboardControlConfiguration KeyboardControl { get; set; } = new();
     public int ReconcileIntervalSeconds { get; set; } = 10;
     public List<VirtualDeviceConfiguration> Devices { get; set; } =
@@ -37,7 +41,17 @@ public sealed class RouterConfiguration
         errors.AddRange(Sidetone.Validate());
         errors.AddRange(Ducking.Validate());
         errors.AddRange(NdiAudio.Validate());
-        errors.AddRange(NdiReceiver.Validate());
+        if (NdiReceivers.Count != NdiReceiverCount)
+            errors.Add($"exactly {NdiReceiverCount} NDI receivers must be configured");
+        if (NdiReceivers.Select(receiver => receiver.Number).Distinct().Count() != NdiReceivers.Count)
+            errors.Add("NDI receiver numbers must be unique");
+        foreach (var receiver in NdiReceivers)
+        {
+            if (receiver.Number is < 1 or > NdiReceiverCount)
+                errors.Add($"NDI receiver number {receiver.Number} is outside 1-{NdiReceiverCount}");
+            errors.AddRange(receiver.Validate(
+                receiver.Number == 1 ? "ndiReceiver" : $"ndiReceivers[{receiver.Number}]"));
+        }
         errors.AddRange(KeyboardControl.Validate());
         if (Devices.Count != 4)
             errors.Add("exactly four virtual devices must be configured");
@@ -69,6 +83,25 @@ public sealed class RouterConfiguration
             Ducking.TriggerSources.Add(Ducking.PriorityDevice);
         Ducking.TriggerSources = Ducking.TriggerSources.Distinct().Order().ToList();
         Ducking.PriorityDevice = Ducking.TriggerSources[0];
+
+        NdiReceiver ??= new NdiReceiverConfiguration { Number = 1 };
+        NdiReceivers ??= [];
+        if (NdiReceivers.Count == 0)
+        {
+            NdiReceiver.Number = 1;
+            NdiReceivers.Add(NdiReceiver);
+        }
+        for (var number = 1; number <= NdiReceiverCount; number++)
+        {
+            if (NdiReceivers.All(receiver => receiver.Number != number))
+                NdiReceivers.Add(new NdiReceiverConfiguration { Number = number });
+        }
+        NdiReceivers = NdiReceivers
+            .OrderBy(receiver => receiver.Number)
+            .Take(NdiReceiverCount)
+            .ToList();
+        NdiReceiver = NdiReceivers.FirstOrDefault(receiver => receiver.Number == 1)
+            ?? new NdiReceiverConfiguration { Number = 1 };
     }
 }
 
@@ -103,21 +136,22 @@ public sealed class NdiAudioConfiguration
 
 public sealed class NdiReceiverConfiguration
 {
+    public int Number { get; set; } = 1;
     public bool Enabled { get; set; }
     public string SourceName { get; set; } = string.Empty;
     public double Gain { get; set; } = 1.0;
 
-    public IReadOnlyList<string> Validate()
+    public IReadOnlyList<string> Validate(string prefix = "ndiReceiver")
     {
         var errors = new List<string>();
         if (!double.IsFinite(Gain) || Gain is < 0 or > 1.5)
-            errors.Add("ndiReceiver.gain must be between 0.0 and 1.5");
+            errors.Add($"{prefix}.gain must be between 0.0 and 1.5");
         if (Enabled && string.IsNullOrWhiteSpace(SourceName))
-            errors.Add("ndiReceiver.sourceName must be selected when the receiver is enabled");
+            errors.Add($"{prefix}.sourceName must be selected when the receiver is enabled");
         else if (System.Text.Encoding.UTF8.GetByteCount(SourceName) > 511)
-            errors.Add("ndiReceiver.sourceName must be at most 511 UTF-8 bytes");
+            errors.Add($"{prefix}.sourceName must be at most 511 UTF-8 bytes");
         else if (SourceName.Any(character => char.IsControl(character)))
-            errors.Add("ndiReceiver.sourceName must not contain control characters");
+            errors.Add($"{prefix}.sourceName must not contain control characters");
         return errors;
     }
 }
@@ -131,6 +165,7 @@ public sealed class VirtualDeviceConfiguration
     public bool OutputEnabled { get; set; } = true;
     public double OutputGain { get; set; } = 1.0;
     public bool OutputSolo { get; set; }
+    public bool NdiOutputEnabled { get; set; }
 }
 
 public static class UsbChannelNames
@@ -149,6 +184,11 @@ public static class UsbChannelNames
             ? standardName
             : $"{device.FriendlyName} ({standardName})";
     }
+
+    public static string NdiOutputName(VirtualDeviceConfiguration device) =>
+        string.IsNullOrWhiteSpace(device.FriendlyName)
+            ? $"Audio Out ({device.Number})"
+            : $"Audio Out ({device.Number} - {device.FriendlyName})";
 
     public static string? ValidateFriendlyName(string? value)
     {
@@ -177,14 +217,14 @@ public sealed class DuckingConfiguration
     public IReadOnlyList<string> Validate()
     {
         var errors = new List<string>();
-        if (PriorityDevice is < 0 or > 4)
-            errors.Add("ducking.priorityDevice must be 0 (self) or between 1 and 4");
+        if (PriorityDevice is < 0 or > 8)
+            errors.Add("ducking.priorityDevice must be 0 (self), 1-4 (outputs), or 5-8 (NDI receivers)");
         if (TriggerSources is null || TriggerSources.Count == 0)
             errors.Add("ducking.triggerSources must contain at least one source");
         else
         {
-            if (TriggerSources.Any(source => source is < 0 or > 4))
-                errors.Add("ducking.triggerSources entries must be 0 (self) or between 1 and 4");
+            if (TriggerSources.Any(source => source is < 0 or > 8))
+                errors.Add("ducking.triggerSources entries must be 0 (self), 1-4 (outputs), or 5-8 (NDI receivers)");
             if (TriggerSources.Distinct().Count() != TriggerSources.Count)
                 errors.Add("ducking.triggerSources entries must be unique");
         }

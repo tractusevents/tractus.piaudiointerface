@@ -42,6 +42,7 @@ public sealed class KeyboardChannelControl
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? DefaultEnabled { get; set; }
     public InputControlBinding? Button { get; set; }
+    public bool DoubleClickLatch { get; set; } = true;
 }
 
 public static class KeyboardChannelActions
@@ -76,6 +77,9 @@ public sealed class KeyboardControlConfiguration
     public List<string> DeviceIds { get; set; } = [];
     public int GainStepPercent { get; set; } = 2;
     public int MicrophoneGainDevice { get; set; } = 1;
+    public int DoubleClickMilliseconds { get; set; } = 300;
+    public bool LedFeedbackEnabled { get; set; }
+    public int LedLayer { get; set; } = 1;
     public List<KeyboardChannelControl> Channels { get; set; } =
     [
         new() { Number = 1, Action = KeyboardChannelActions.None },
@@ -132,6 +136,10 @@ public sealed class KeyboardControlConfiguration
             errors.Add("keyboardControl.gainStepPercent must be between 1 and 25");
         if (MicrophoneGainDevice is < 1 or > 4)
             errors.Add("keyboardControl.microphoneGainDevice must be between 1 and 4");
+        if (DoubleClickMilliseconds is < 100 or > 1000)
+            errors.Add("keyboardControl.doubleClickMilliseconds must be between 100 and 1000");
+        if (LedLayer is < 1 or > 3)
+            errors.Add("keyboardControl.ledLayer must be between 1 and 3");
         if (Channels.Count != 4 || Channels.Select(channel => channel.Number).Distinct().Count() != 4 ||
             Channels.Any(channel => channel.Number is < 1 or > 4))
         {
@@ -180,7 +188,10 @@ public sealed record KeyboardControlStatus(
     string? LearningTarget,
     LinuxInputEvent? LastEvent,
     string Message,
-    string? Error);
+    string? Error)
+{
+    public IReadOnlyList<int> LatchedChannels { get; init; } = [];
+}
 
 public static class KeyboardMappingTargets
 {

@@ -41,41 +41,67 @@ static void update_sender_status(
 {
     pthread_mutex_lock(&data->status_mutex);
     data->status.sequence++;
-    data->status.sender_enabled = enabled;
-    data->status.sender_online = online;
-    data->status.sender_connections = connections;
-    data->status.sender_peak_dbfs = peak_dbfs;
-    data->status.sender_rms_dbfs = rms_dbfs;
-    data->status.sender_queue_ms =
+    data->status.sender.enabled = enabled;
+    data->status.sender.online = online;
+    data->status.sender.connections = connections;
+    data->status.sender.peak_dbfs = peak_dbfs;
+    data->status.sender.rms_dbfs = rms_dbfs;
+    data->status.sender.queue_ms =
         (float)tractus_ndi_mono_available(&data->sender_ring) * 1000.0f /
         TRACTUS_NDI_SAMPLE_RATE;
-    data->status.sender_underruns = atomic_load_explicit(
+    data->status.sender.underruns = atomic_load_explicit(
         &data->sender_ring.underruns, memory_order_relaxed);
-    data->status.sender_overruns = atomic_load_explicit(
+    data->status.sender.overruns = atomic_load_explicit(
         &data->sender_ring.overruns, memory_order_relaxed);
+    pthread_mutex_unlock(&data->status_mutex);
+}
+
+static void update_output_sender_status(
+    struct tractus_ndi_data *data,
+    unsigned index,
+    bool enabled,
+    bool online,
+    int connections,
+    float peak_dbfs,
+    float rms_dbfs)
+{
+    struct tractus_ndi_stereo_ring *ring = &data->output_sender_rings[index];
+    pthread_mutex_lock(&data->status_mutex);
+    data->status.sequence++;
+    struct tractus_ndi_sender_status *status = &data->status.output_senders[index];
+    status->enabled = enabled;
+    status->online = online;
+    status->connections = connections;
+    status->peak_dbfs = peak_dbfs;
+    status->rms_dbfs = rms_dbfs;
+    status->queue_ms = (float)tractus_ndi_stereo_available(ring) * 1000.0f /
+        TRACTUS_NDI_SAMPLE_RATE;
+    status->underruns = atomic_load_explicit(&ring->underruns, memory_order_relaxed);
+    status->overruns = atomic_load_explicit(&ring->overruns, memory_order_relaxed);
     pthread_mutex_unlock(&data->status_mutex);
 }
 
 static void update_receiver_status(
     struct tractus_ndi_data *data,
+    unsigned index,
     bool enabled,
     bool connected,
     float peak_dbfs,
     float rms_dbfs)
 {
+    struct tractus_ndi_stereo_ring *ring = &data->receiver_rings[index];
     pthread_mutex_lock(&data->status_mutex);
     data->status.sequence++;
-    data->status.receiver_enabled = enabled;
-    data->status.receiver_connected = connected;
-    data->status.receiver_peak_dbfs = peak_dbfs;
-    data->status.receiver_rms_dbfs = rms_dbfs;
-    data->status.receiver_queue_ms =
-        (float)tractus_ndi_stereo_available(&data->receiver_ring) * 1000.0f /
+    struct tractus_ndi_receiver_status *status = &data->status.receivers[index];
+    status->enabled = enabled;
+    status->connected = connected;
+    status->peak_dbfs = peak_dbfs;
+    status->rms_dbfs = rms_dbfs;
+    status->queue_ms =
+        (float)tractus_ndi_stereo_available(ring) * 1000.0f /
         TRACTUS_NDI_SAMPLE_RATE;
-    data->status.receiver_underruns = atomic_load_explicit(
-        &data->receiver_ring.underruns, memory_order_relaxed);
-    data->status.receiver_overruns = atomic_load_explicit(
-        &data->receiver_ring.overruns, memory_order_relaxed);
+    status->underruns = atomic_load_explicit(&ring->underruns, memory_order_relaxed);
+    status->overruns = atomic_load_explicit(&ring->overruns, memory_order_relaxed);
     pthread_mutex_unlock(&data->status_mutex);
 }
 
@@ -91,19 +117,42 @@ static void on_process(void *userdata, struct spa_io_position *position)
         tractus_ndi_mono_clear(&data->sender_ring);
     }
 
-    float *receiver_outputs[TRACTUS_NDI_CHANNEL_COUNT];
-    for (unsigned channel = 0; channel < TRACTUS_NDI_CHANNEL_COUNT; channel++) {
-        receiver_outputs[channel] = pw_filter_get_dsp_buffer(
-            data->receiver_outputs[channel], sample_count);
-        if (receiver_outputs[channel] == NULL)
-            return;
+    for (unsigned output = 0; output < TRACTUS_NDI_OUTPUT_SENDER_COUNT; output++) {
+        float *inputs[TRACTUS_NDI_CHANNEL_COUNT];
+        bool available = true;
+        for (unsigned channel = 0; channel < TRACTUS_NDI_CHANNEL_COUNT; channel++) {
+            inputs[channel] = pw_filter_get_dsp_buffer(
+                data->output_sender_inputs[output][channel], sample_count);
+            available = available && inputs[channel] != NULL;
+        }
+        if (available && atomic_load_explicit(
+                &data->output_sender_active[output], memory_order_relaxed)) {
+            tractus_ndi_stereo_push(
+                &data->output_sender_rings[output], inputs, sample_count);
+        } else {
+            tractus_ndi_stereo_clear(&data->output_sender_rings[output]);
+        }
     }
-    if (atomic_load_explicit(&data->receiver_active, memory_order_relaxed)) {
-        tractus_ndi_stereo_pop(&data->receiver_ring, receiver_outputs, sample_count);
-    } else {
+
+    for (unsigned receiver = 0; receiver < TRACTUS_NDI_RECEIVER_COUNT; receiver++) {
+        float *outputs[TRACTUS_NDI_CHANNEL_COUNT];
+        bool available = true;
         for (unsigned channel = 0; channel < TRACTUS_NDI_CHANNEL_COUNT; channel++)
-            memset(receiver_outputs[channel], 0, sample_count * sizeof(float));
-        tractus_ndi_stereo_clear(&data->receiver_ring);
+        {
+            outputs[channel] = pw_filter_get_dsp_buffer(
+                data->receiver_outputs[receiver][channel], sample_count);
+            available = available && outputs[channel] != NULL;
+        }
+        if (!available)
+            continue;
+        if (atomic_load_explicit(&data->receiver_active[receiver], memory_order_relaxed)) {
+            tractus_ndi_stereo_pop(
+                &data->receiver_rings[receiver], outputs, sample_count);
+        } else {
+            for (unsigned channel = 0; channel < TRACTUS_NDI_CHANNEL_COUNT; channel++)
+                memset(outputs[channel], 0, sample_count * sizeof(float));
+            tractus_ndi_stereo_clear(&data->receiver_rings[receiver]);
+        }
     }
 }
 
@@ -216,9 +265,115 @@ void *tractus_ndi_sender_thread_main(void *userdata)
     return NULL;
 }
 
+void *tractus_ndi_output_sender_thread_main(void *userdata)
+{
+    struct tractus_ndi_worker_context *context = userdata;
+    struct tractus_ndi_data *data = context->data;
+    unsigned index = context->index;
+    struct tractus_ndi_stereo_ring *ring = &data->output_sender_rings[index];
+    NDIlib_send_instance_t sender = NULL;
+    uint64_t applied_version = UINT64_MAX;
+    float samples[TRACTUS_NDI_CHANNEL_COUNT][TRACTUS_NDI_FRAME_SAMPLES];
+    bool prebuffered = false;
+
+    while (atomic_load_explicit(&data->running, memory_order_relaxed)) {
+        struct tractus_ndi_configuration configuration;
+        copy_configuration(data, &configuration);
+        if (configuration.version != applied_version) {
+            atomic_store_explicit(
+                &data->output_sender_active[index], false, memory_order_release);
+            if (sender != NULL) {
+                data->ndi->send_destroy(sender);
+                sender = NULL;
+            }
+            tractus_ndi_stereo_clear(ring);
+            prebuffered = false;
+            applied_version = configuration.version;
+            if (configuration.output_sender_enabled[index]) {
+                NDIlib_send_create_t settings = {
+                    .p_ndi_name = configuration.output_sender_name[index],
+                    .p_groups = NULL,
+                    .clock_video = false,
+                    .clock_audio = true,
+                };
+                sender = data->ndi->send_create(&settings);
+                if (sender == NULL) {
+                    fprintf(stderr, "Could not create NDI output sender '%s'\n",
+                        configuration.output_sender_name[index]);
+                }
+            }
+            atomic_store_explicit(
+                &data->output_sender_active[index],
+                configuration.output_sender_enabled[index] && sender != NULL,
+                memory_order_release);
+        }
+
+        if (!configuration.output_sender_enabled[index] || sender == NULL) {
+            update_output_sender_status(data, index,
+                configuration.output_sender_enabled[index], false, 0, -120.0f, -120.0f);
+            sleep_milliseconds(50);
+            continue;
+        }
+        uint64_t available = tractus_ndi_stereo_available(ring);
+        if (!prebuffered) {
+            if (available < TRACTUS_NDI_SEND_PREBUFFER) {
+                update_output_sender_status(data, index, true, true,
+                    data->ndi->send_get_no_connections(sender, 0), -120.0f, -120.0f);
+                sleep_milliseconds(2);
+                continue;
+            }
+            prebuffered = true;
+        }
+        if (available > TRACTUS_NDI_SEND_TARGET + TRACTUS_NDI_FRAME_SAMPLES) {
+            tractus_ndi_stereo_discard(
+                ring, (uint32_t)(available - TRACTUS_NDI_SEND_TARGET));
+        }
+
+        float *destinations[TRACTUS_NDI_CHANNEL_COUNT] = { samples[0], samples[1] };
+        tractus_ndi_stereo_pop(ring, destinations, TRACTUS_NDI_FRAME_SAMPLES);
+        float peak = 0.0f;
+        double sum_squares = 0.0;
+        for (unsigned channel = 0; channel < TRACTUS_NDI_CHANNEL_COUNT; channel++) {
+            for (unsigned sample = 0; sample < TRACTUS_NDI_FRAME_SAMPLES; sample++) {
+                float value = samples[channel][sample];
+                float absolute = fabsf(value);
+                if (absolute > peak)
+                    peak = absolute;
+                sum_squares += (double)value * value;
+            }
+        }
+        NDIlib_audio_frame_v3_t frame = {
+            .sample_rate = TRACTUS_NDI_SAMPLE_RATE,
+            .no_channels = TRACTUS_NDI_CHANNEL_COUNT,
+            .no_samples = TRACTUS_NDI_FRAME_SAMPLES,
+            .timecode = NDIlib_send_timecode_synthesize,
+            .FourCC = NDIlib_FourCC_audio_type_FLTP,
+            .p_data = (uint8_t *)samples,
+            .channel_stride_in_bytes =
+                TRACTUS_NDI_FRAME_SAMPLES * (int)sizeof(float),
+            .p_metadata = NULL,
+            .timestamp = 0,
+        };
+        data->ndi->send_send_audio_v3(sender, &frame);
+        update_output_sender_status(data, index, true, true,
+            data->ndi->send_get_no_connections(sender, 0),
+            linear_to_dbfs(peak),
+            linear_to_dbfs((float)sqrt(sum_squares /
+                (TRACTUS_NDI_FRAME_SAMPLES * TRACTUS_NDI_CHANNEL_COUNT))));
+    }
+    if (sender != NULL)
+        data->ndi->send_destroy(sender);
+    atomic_store_explicit(
+        &data->output_sender_active[index], false, memory_order_release);
+    return NULL;
+}
+
 void *tractus_ndi_receiver_thread_main(void *userdata)
 {
-    struct tractus_ndi_data *data = userdata;
+    struct tractus_ndi_worker_context *context = userdata;
+    struct tractus_ndi_data *data = context->data;
+    unsigned index = context->index;
+    struct tractus_ndi_stereo_ring *ring = &data->receiver_rings[index];
     NDIlib_recv_instance_t receiver = NULL;
     NDIlib_framesync_instance_t framesync = NULL;
     uint64_t applied_version = UINT64_MAX;
@@ -231,7 +386,8 @@ void *tractus_ndi_receiver_thread_main(void *userdata)
         struct tractus_ndi_configuration configuration;
         copy_configuration(data, &configuration);
         if (configuration.version != applied_version) {
-            atomic_store_explicit(&data->receiver_active, false, memory_order_release);
+            atomic_store_explicit(
+                &data->receiver_active[index], false, memory_order_release);
             if (framesync != NULL) {
                 data->ndi->framesync_destroy(framesync);
                 framesync = NULL;
@@ -240,12 +396,12 @@ void *tractus_ndi_receiver_thread_main(void *userdata)
                 data->ndi->recv_destroy(receiver);
                 receiver = NULL;
             }
-            tractus_ndi_stereo_clear(&data->receiver_ring);
+            tractus_ndi_stereo_clear(ring);
             applied_version = configuration.version;
-            if (configuration.receiver_enabled) {
+            if (configuration.receiver_enabled[index]) {
                 NDIlib_recv_create_v3_t settings = {
                     .source_to_connect_to = {
-                        .p_ndi_name = configuration.receiver_name,
+                        .p_ndi_name = configuration.receiver_name[index],
                         .p_url_address = NULL,
                     },
                     .color_format = NDIlib_recv_color_format_fastest,
@@ -257,24 +413,24 @@ void *tractus_ndi_receiver_thread_main(void *userdata)
                 if (receiver != NULL)
                     framesync = data->ndi->framesync_create(receiver);
                 if (receiver == NULL || framesync == NULL) {
-                    fprintf(stderr, "Could not create NDI receiver for '%s'\n",
-                        configuration.receiver_name);
+                        fprintf(stderr, "Could not create NDI receiver for '%s'\n",
+                        configuration.receiver_name[index]);
                 }
             }
             atomic_store_explicit(
-                &data->receiver_active,
-                configuration.receiver_enabled && framesync != NULL,
+                &data->receiver_active[index],
+                configuration.receiver_enabled[index] && framesync != NULL,
                 memory_order_release);
         }
 
-        if (!configuration.receiver_enabled || receiver == NULL || framesync == NULL) {
+        if (!configuration.receiver_enabled[index] || receiver == NULL || framesync == NULL) {
             update_receiver_status(
-                data, configuration.receiver_enabled, false, -120.0f, -120.0f);
+                data, index, configuration.receiver_enabled[index], false, -120.0f, -120.0f);
             sleep_milliseconds(50);
             continue;
         }
 
-        uint64_t queued = tractus_ndi_stereo_available(&data->receiver_ring);
+        uint64_t queued = tractus_ndi_stereo_available(ring);
         if (queued < TRACTUS_NDI_RECEIVE_TARGET_QUEUE) {
             uint32_t requested =
                 (uint32_t)(TRACTUS_NDI_RECEIVE_TARGET_QUEUE - queued);
@@ -283,7 +439,7 @@ void *tractus_ndi_receiver_thread_main(void *userdata)
             NDIlib_audio_frame_v3_t frame = { 0 };
             data->ndi->framesync_capture_audio_v2(framesync, &frame,
                 TRACTUS_NDI_SAMPLE_RATE, TRACTUS_NDI_CHANNEL_COUNT, (int)requested);
-            tractus_ndi_stereo_push_frame(&data->receiver_ring, &frame,
+            tractus_ndi_stereo_push_frame(ring, &frame,
                 &meter_peak, &meter_sum_squares, &meter_samples);
             data->ndi->framesync_free_audio_v2(framesync, &frame);
         } else {
@@ -297,14 +453,15 @@ void *tractus_ndi_receiver_thread_main(void *userdata)
                 ? (float)sqrt(meter_sum_squares / (double)meter_samples)
                 : 0.0f;
             update_receiver_status(
-                data, true, connected, linear_to_dbfs(meter_peak), linear_to_dbfs(rms));
+                data, index, true, connected,
+                linear_to_dbfs(meter_peak), linear_to_dbfs(rms));
             meter_peak = 0.0f;
             meter_sum_squares = 0.0;
             meter_samples = 0;
             status_counter = 0;
         }
     }
-    atomic_store_explicit(&data->receiver_active, false, memory_order_release);
+    atomic_store_explicit(&data->receiver_active[index], false, memory_order_release);
     if (framesync != NULL)
         data->ndi->framesync_destroy(framesync);
     if (receiver != NULL)

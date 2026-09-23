@@ -19,13 +19,34 @@ public sealed class AudioRouter(
 {
     private readonly SemaphoreSlim applyLock = new(1, 1);
     private string? appliedGainFingerprint;
+    private readonly Dictionary<int, int> cachedMicrophoneNodeIds = [];
     public ApplyResult? LastResult { get; private set; }
+
+    public async Task<bool> ApplyMicrophoneGainAsync(
+        int number,
+        double gain,
+        CancellationToken cancellationToken = default)
+    {
+        await applyLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (!cachedMicrophoneNodeIds.TryGetValue(number, out var nodeId))
+                return false;
+            var result = await graph.SetVolumeAsync(nodeId, gain, 1.5, cancellationToken);
+            return result.Success;
+        }
+        finally
+        {
+            applyLock.Release();
+        }
+    }
 
     public async Task<ApplyResult> ApplyAsync(CancellationToken cancellationToken = default)
     {
         await applyLock.WaitAsync(cancellationToken);
         try
         {
+            cachedMicrophoneNodeIds.Clear();
             var configuration = await configStore.LoadAsync(cancellationToken);
             var validationErrors = configuration.Validate();
             if (validationErrors.Count > 0)
@@ -50,7 +71,9 @@ public sealed class AudioRouter(
                 if (!ndiResult.Success)
                 {
                     var message = $"Could not configure NDI audio service: {ndiResult.Error}";
-                    if (configuration.NdiAudio.Enabled || configuration.NdiReceiver.Enabled)
+                    if (configuration.NdiAudio.Enabled ||
+                        configuration.NdiReceivers.Any(receiver => receiver.Enabled) ||
+                        configuration.Devices.Any(device => device.NdiOutputEnabled))
                         errors.Add(message);
                     else
                         warnings.Add(message);
@@ -62,6 +85,8 @@ public sealed class AudioRouter(
                 errors.Add($"Expected four duplex gadget cards matching '{configuration.GadgetMatch}', found {gadgets.Count}.");
                 return SetLast(new ApplyResult(DateTimeOffset.UtcNow, gadgets.Count, 0, 0, warnings, errors));
             }
+            foreach (var device in configuration.Devices)
+                cachedMicrophoneNodeIds[device.Number] = gadgets[device.Number - 1].InputSink.Id;
 
             var physicalCapture = snapshot.FindNode(configuration.PhysicalCaptureNode, "Audio/Source");
             var physicalPlayback = snapshot.FindNode(configuration.PhysicalPlaybackNode, "Audio/Sink");
@@ -74,11 +99,11 @@ public sealed class AudioRouter(
             if (string.IsNullOrWhiteSpace(configuration.PhysicalCaptureNode))
                 warnings.Add("No physical capture node is selected; microphone links were left unchanged.");
             else if (physicalCapture is null)
-                warnings.Add($"Physical capture node '{configuration.PhysicalCaptureNode}' is not currently available.");
+                errors.Add($"Configured microphone device is unavailable: {configuration.PhysicalCaptureNode}. Check its USB connection and power.");
             if (string.IsNullOrWhiteSpace(configuration.PhysicalPlaybackNode))
                 warnings.Add("No physical playback node is selected; output links were left unchanged.");
             else if (physicalPlayback is null)
-                warnings.Add($"Physical playback node '{configuration.PhysicalPlaybackNode}' is not currently available.");
+                errors.Add($"Configured speaker device is unavailable: {configuration.PhysicalPlaybackNode}. Check its USB connection and power.");
             else if (dsp is null)
                 errors.Add("The Tractus real-time DSP mixer is not currently available.");
 
@@ -92,9 +117,9 @@ public sealed class AudioRouter(
             PipeWirePort? dspOutputLeft = null;
             PipeWirePort? dspOutputRight = null;
             PipeWirePort? dspSidetoneInput = null;
-            PipeWirePort? dspNdiLeftInput = null;
-            PipeWirePort? dspNdiRightInput = null;
             var dspInputs = new Dictionary<(int Device, string Channel), PipeWirePort>();
+            var dspNdiInputs = new Dictionary<(int Receiver, string Channel), PipeWirePort>();
+            var ndiSenderInputs = new Dictionary<(int Device, string Channel), PipeWirePort>();
             if (manageInputs)
             {
                 physicalCapturePort = SelectPort(
@@ -109,7 +134,8 @@ public sealed class AudioRouter(
 
             if (ndi is not null)
             {
-                var ndiInput = SelectPort(snapshot.PortsFor(ndi, "in"), "input_MONO");
+                var ndiInputPorts = snapshot.PortsFor(ndi, "in");
+                var ndiInput = SelectPort(ndiInputPorts, "input_MONO");
                 if (ndiInput is null)
                 {
                     if (configuration.NdiAudio.Enabled)
@@ -126,8 +152,28 @@ public sealed class AudioRouter(
                             warnings.Add("NDI audio is enabled but no available physical microphone channel is selected.");
                     }
                 }
+                foreach (var device in configuration.Devices)
+                {
+                    foreach (var channel in new[] { "FL", "FR" })
+                    {
+                        var input = SelectPort(
+                            ndiInputPorts, $"input_output_{device.Number}_{channel}");
+                        if (input is not null)
+                        {
+                            ndiSenderInputs[(device.Number, channel)] = input;
+                            managedInputPorts.Add(input.Id);
+                        }
+                    }
+                    if (device.NdiOutputEnabled &&
+                        (!ndiSenderInputs.ContainsKey((device.Number, "FL")) ||
+                         !ndiSenderInputs.ContainsKey((device.Number, "FR"))))
+                    {
+                        errors.Add($"The Tractus NDI service does not expose sender inputs for output {device.Number}.");
+                    }
+                }
             }
-            else if (configuration.NdiAudio.Enabled)
+            else if (configuration.NdiAudio.Enabled ||
+                configuration.Devices.Any(device => device.NdiOutputEnabled))
             {
                 errors.Add("The Tractus NDI audio sender is not currently available.");
             }
@@ -141,8 +187,15 @@ public sealed class AudioRouter(
                 dspOutputLeft = SelectPort(dspOutputPorts, "output_FL");
                 dspOutputRight = SelectPort(dspOutputPorts, "output_FR");
                 dspSidetoneInput = SelectPort(dspInputPorts, "input_sidetone_MONO");
-                dspNdiLeftInput = SelectPort(dspInputPorts, "input_ndi_FL");
-                dspNdiRightInput = SelectPort(dspInputPorts, "input_ndi_FR");
+                for (var receiver = 1; receiver <= RouterConfiguration.NdiReceiverCount; receiver++)
+                {
+                    foreach (var channel in new[] { "FL", "FR" })
+                    {
+                        var input = SelectPort(dspInputPorts, $"input_ndi_{receiver}_{channel}");
+                        if (input is not null)
+                            dspNdiInputs[(receiver, channel)] = input;
+                    }
+                }
                 foreach (var device in configuration.Devices)
                 {
                     var left = SelectPort(dspInputPorts, $"input_{device.Number}_FL");
@@ -158,8 +211,7 @@ public sealed class AudioRouter(
                     manageOutputs = false;
                 }
                 else if (dspOutputLeft is null || dspOutputRight is null ||
-                    dspSidetoneInput is null || dspNdiLeftInput is null ||
-                    dspNdiRightInput is null || dspInputs.Count != 8)
+                    dspSidetoneInput is null || dspNdiInputs.Count != 8 || dspInputs.Count != 8)
                 {
                     errors.Add("The Tractus DSP mixer does not expose the expected USB, sidetone, NDI, and stereo output ports.");
                     manageOutputs = false;
@@ -252,6 +304,15 @@ public sealed class AudioRouter(
                         }
                     }
                 }
+
+                if (ndi is not null && device.NdiOutputEnabled &&
+                    gadgetLeft is not null && gadgetRight is not null &&
+                    ndiSenderInputs.TryGetValue((device.Number, "FL"), out var ndiSenderLeft) &&
+                    ndiSenderInputs.TryGetValue((device.Number, "FR"), out var ndiSenderRight))
+                {
+                    desiredLinks.Add((gadgetLeft.Id, ndiSenderLeft.Id));
+                    desiredLinks.Add((gadgetRight.Id, ndiSenderRight.Id));
+                }
             }
 
 
@@ -271,22 +332,25 @@ public sealed class AudioRouter(
                 if (ndi is not null)
                 {
                     var ndiOutputs = snapshot.PortsFor(ndi, "out");
-                    var ndiLeft = SelectPort(ndiOutputs, "output_FL");
-                    var ndiRight = SelectPort(ndiOutputs, "output_FR");
-                    if (ndiLeft is null || ndiRight is null)
+                    foreach (var receiver in configuration.NdiReceivers)
                     {
-                        if (configuration.NdiReceiver.Enabled)
-                            errors.Add("The Tractus NDI receiver does not expose its stereo output ports.");
-                    }
-                    else
-                    {
+                        var ndiLeft = SelectPort(
+                            ndiOutputs, $"output_receiver_{receiver.Number}_FL");
+                        var ndiRight = SelectPort(
+                            ndiOutputs, $"output_receiver_{receiver.Number}_FR");
+                        if (ndiLeft is null || ndiRight is null)
+                        {
+                            if (receiver.Enabled)
+                                errors.Add($"The Tractus NDI receiver {receiver.Number} does not expose its stereo output ports.");
+                            continue;
+                        }
                         managedOutputPorts.Add(ndiLeft.Id);
                         managedOutputPorts.Add(ndiRight.Id);
-                        desiredLinks.Add((ndiLeft.Id, dspNdiLeftInput!.Id));
-                        desiredLinks.Add((ndiRight.Id, dspNdiRightInput!.Id));
+                        desiredLinks.Add((ndiLeft.Id, dspNdiInputs[(receiver.Number, "FL")].Id));
+                        desiredLinks.Add((ndiRight.Id, dspNdiInputs[(receiver.Number, "FR")].Id));
                     }
                 }
-                else if (configuration.NdiReceiver.Enabled)
+                else if (configuration.NdiReceivers.Any(receiver => receiver.Enabled))
                 {
                     errors.Add("The Tractus NDI audio receiver is not currently available.");
                 }

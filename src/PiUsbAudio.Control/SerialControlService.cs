@@ -219,16 +219,17 @@ public sealed class SerialControlService(
                         "UNSOLO OUTPUT <1-4|ALL>",
                         "GAIN MIC <1-4> <0-150>", "GAIN OUTPUT <1-4> <0-150>",
                         "GAIN MASTER <0-150>", "SIDETONE <ON|OFF>",
-                        "GAIN SIDETONE <0-150>", "GAIN NDI <0-150>",
+                        "GAIN SIDETONE <0-150>", "GAIN NDI <1-4> <0-150>",
                         "DUCK <ON|OFF>", "DUCK TRIGGERS",
-                        "DUCK TRIGGER <SELF|1-4> <ON|OFF>",
-                        "DUCK PRIORITY <SELF|1-4>",
+                        "DUCK TRIGGER <SELF|1-4|NDI1-NDI4> <ON|OFF>",
+                        "DUCK PRIORITY <SELF|1-4|NDI1-NDI4>",
                         "DUCK THRESHOLD <-90..0>", "DUCK DEPTH <0..60>",
                         "DUCK ATTACK <1..2000>", "DUCK HOLD <0..5000>",
                         "DUCK RELEASE <1..10000>", "METERS",
                         "NDI <ON|OFF>", "NDI NAME <source name>", "NDI STATUS",
-                        "NDI SOURCES", "NDI RECEIVE <ON|OFF>",
-                        "NDI RECEIVE SOURCE <source name>"
+                        "NDI SOURCES", "NDI OUTPUT <1-4> <ON|OFF>",
+                        "NDI RECEIVE <1-4> <ON|OFF>",
+                        "NDI RECEIVE <1-4> SOURCE <source name>"
                     }
                 };
             if (Is(words[0], "STATUS"))
@@ -256,12 +257,39 @@ public sealed class SerialControlService(
                 return Success($"NDI receiver {(enabled ? "enabled" : "disabled")}", state);
             }
 
+            if (Is(words[0], "NDI") && words.Length == 4 && Is(words[1], "RECEIVE") &&
+                (Is(words[3], "ON") || Is(words[3], "OFF")))
+            {
+                var number = ParseRequiredDevice(words[2]);
+                var enabled = Is(words[3], "ON");
+                var state = await control.SetNdiReceiverEnabledAsync(number, enabled, cancellationToken);
+                return Success($"NDI receiver {number} {(enabled ? "enabled" : "disabled")}", state);
+            }
+
             if (Is(words[0], "NDI") && words.Length >= 4 &&
                 Is(words[1], "RECEIVE") && Is(words[2], "SOURCE"))
             {
                 var sourceName = string.Join(' ', words.Skip(3));
                 var state = await control.SetNdiReceiverSourceAsync(sourceName, cancellationToken);
                 return Success("NDI receiver source updated", state);
+            }
+
+            if (Is(words[0], "NDI") && words.Length >= 5 &&
+                Is(words[1], "RECEIVE") && Is(words[3], "SOURCE"))
+            {
+                var number = ParseRequiredDevice(words[2]);
+                var sourceName = string.Join(' ', words.Skip(4));
+                var state = await control.SetNdiReceiverSourceAsync(number, sourceName, cancellationToken);
+                return Success($"NDI receiver {number} source updated", state);
+            }
+
+            if (Is(words[0], "NDI") && words.Length == 4 && Is(words[1], "OUTPUT") &&
+                (Is(words[3], "ON") || Is(words[3], "OFF")))
+            {
+                var number = ParseRequiredDevice(words[2]);
+                var enabled = Is(words[3], "ON");
+                var state = await control.SetNdiOutputEnabledAsync(number, enabled, cancellationToken);
+                return Success($"NDI output {number} {(enabled ? "enabled" : "disabled")}", state);
             }
 
             if (Is(words[0], "NDI") && words.Length == 2 &&
@@ -306,15 +334,14 @@ public sealed class SerialControlService(
                 return Success($"Sidetone {(enabled ? "enabled" : "muted")}", state);
             }
 
-            if (Is(words[0], "GAIN") && words.Length == 4)
+            if (Is(words[0], "GAIN") && words.Length == 4 &&
+                (Is(words[1], "MIC") || Is(words[1], "OUTPUT") || Is(words[1], "OUT")))
             {
                 var percent = ParsePercent(words[3]);
                 var number = ParseRequiredDevice(words[2]);
                 var state = Is(words[1], "MIC")
                     ? await control.SetMicrophoneGainAsync(number, percent / 100.0, cancellationToken)
-                    : Is(words[1], "OUTPUT") || Is(words[1], "OUT")
-                        ? await control.SetOutputGainAsync(number, percent / 100.0, cancellationToken)
-                        : throw new InvalidDataException("GAIN target must be MIC or OUTPUT.");
+                    : await control.SetOutputGainAsync(number, percent / 100.0, cancellationToken);
                 return Success("Gain updated", state);
             }
 
@@ -340,6 +367,16 @@ public sealed class SerialControlService(
                     ParsePercent(words[2]) / 100.0,
                     cancellationToken);
                 return Success("NDI receiver gain updated", state);
+            }
+
+            if (Is(words[0], "GAIN") && words.Length == 4 && Is(words[1], "NDI"))
+            {
+                var number = ParseRequiredDevice(words[2]);
+                var state = await control.SetNdiReceiverGainAsync(
+                    number,
+                    ParsePercent(words[3]) / 100.0,
+                    cancellationToken);
+                return Success($"NDI receiver {number} gain updated", state);
             }
 
             if (Is(words[0], "SOLO") && words.Length == 3 && Is(words[1], "OUTPUT"))
@@ -436,7 +473,13 @@ public sealed class SerialControlService(
     private static int ParseDuckingPriority(string value) =>
         Is(value, "SELF") || Is(value, "LOCAL") || value == "0"
             ? 0
-            : ParseRequiredDevice(value);
+            : value.StartsWith("NDI", StringComparison.OrdinalIgnoreCase) &&
+                int.TryParse(value[3..], out var receiver) && receiver is >= 1 and <= 4
+                ? receiver + 4
+                : int.TryParse(value, out var source) && source is >= 1 and <= 8
+                    ? source
+                    : throw new InvalidDataException(
+                        "Ducking source must be SELF, output 1-4, or NDI1-NDI4.");
 
     private static double ParsePercent(string value) =>
         double.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, out var percent) &&

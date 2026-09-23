@@ -18,6 +18,8 @@
 
 #define TRACTUS_NDI_SAMPLE_RATE 48000
 #define TRACTUS_NDI_CHANNEL_COUNT 2U
+#define TRACTUS_NDI_OUTPUT_SENDER_COUNT 4U
+#define TRACTUS_NDI_RECEIVER_COUNT 4U
 #define TRACTUS_NDI_FRAME_SAMPLES 480U
 #define TRACTUS_NDI_SEND_RING_CAPACITY 131072U
 #define TRACTUS_NDI_SEND_RING_MASK (TRACTUS_NDI_SEND_RING_CAPACITY - 1U)
@@ -55,28 +57,41 @@ struct tractus_ndi_stereo_ring {
 struct tractus_ndi_configuration {
     uint64_t version;
     bool sender_enabled;
-    bool receiver_enabled;
     char sender_name[TRACTUS_NDI_MAX_SENDER_NAME + 1U];
-    char receiver_name[TRACTUS_NDI_MAX_RECEIVER_NAME + 1U];
+    bool output_sender_enabled[TRACTUS_NDI_OUTPUT_SENDER_COUNT];
+    char output_sender_name[TRACTUS_NDI_OUTPUT_SENDER_COUNT]
+        [TRACTUS_NDI_MAX_SENDER_NAME + 1U];
+    bool receiver_enabled[TRACTUS_NDI_RECEIVER_COUNT];
+    char receiver_name[TRACTUS_NDI_RECEIVER_COUNT]
+        [TRACTUS_NDI_MAX_RECEIVER_NAME + 1U];
+};
+
+struct tractus_ndi_sender_status {
+    bool enabled;
+    bool online;
+    int connections;
+    float peak_dbfs;
+    float rms_dbfs;
+    float queue_ms;
+    uint64_t underruns;
+    uint64_t overruns;
+};
+
+struct tractus_ndi_receiver_status {
+    bool enabled;
+    bool connected;
+    float peak_dbfs;
+    float rms_dbfs;
+    float queue_ms;
+    uint64_t underruns;
+    uint64_t overruns;
 };
 
 struct tractus_ndi_status {
     uint64_t sequence;
-    bool sender_enabled;
-    bool sender_online;
-    int sender_connections;
-    float sender_peak_dbfs;
-    float sender_rms_dbfs;
-    float sender_queue_ms;
-    uint64_t sender_underruns;
-    uint64_t sender_overruns;
-    bool receiver_enabled;
-    bool receiver_connected;
-    float receiver_peak_dbfs;
-    float receiver_rms_dbfs;
-    float receiver_queue_ms;
-    uint64_t receiver_underruns;
-    uint64_t receiver_overruns;
+    struct tractus_ndi_sender_status sender;
+    struct tractus_ndi_sender_status output_senders[TRACTUS_NDI_OUTPUT_SENDER_COUNT];
+    struct tractus_ndi_receiver_status receivers[TRACTUS_NDI_RECEIVER_COUNT];
 };
 
 struct tractus_ndi_source_list {
@@ -86,15 +101,27 @@ struct tractus_ndi_source_list {
         [TRACTUS_NDI_MAX_RECEIVER_NAME + 1U];
 };
 
+struct tractus_ndi_data;
+
+struct tractus_ndi_worker_context {
+    struct tractus_ndi_data *data;
+    unsigned index;
+};
+
 struct tractus_ndi_data {
     struct pw_main_loop *loop;
     struct pw_filter *filter;
     struct tractus_ndi_port *sender_input;
-    struct tractus_ndi_port *receiver_outputs[TRACTUS_NDI_CHANNEL_COUNT];
+    struct tractus_ndi_port *output_sender_inputs[TRACTUS_NDI_OUTPUT_SENDER_COUNT]
+        [TRACTUS_NDI_CHANNEL_COUNT];
+    struct tractus_ndi_port *receiver_outputs[TRACTUS_NDI_RECEIVER_COUNT]
+        [TRACTUS_NDI_CHANNEL_COUNT];
     struct tractus_ndi_mono_ring sender_ring;
-    struct tractus_ndi_stereo_ring receiver_ring;
+    struct tractus_ndi_stereo_ring output_sender_rings[TRACTUS_NDI_OUTPUT_SENDER_COUNT];
+    struct tractus_ndi_stereo_ring receiver_rings[TRACTUS_NDI_RECEIVER_COUNT];
     _Atomic bool sender_active;
-    _Atomic bool receiver_active;
+    _Atomic bool output_sender_active[TRACTUS_NDI_OUTPUT_SENDER_COUNT];
+    _Atomic bool receiver_active[TRACTUS_NDI_RECEIVER_COUNT];
     _Atomic bool running;
 
     pthread_mutex_t configuration_mutex;
@@ -109,7 +136,11 @@ struct tractus_ndi_data {
     int control_fd;
     char socket_path[sizeof(((struct sockaddr_un *)0)->sun_path)];
     pthread_t sender_thread;
-    pthread_t receiver_thread;
+    pthread_t output_sender_threads[TRACTUS_NDI_OUTPUT_SENDER_COUNT];
+    pthread_t receiver_threads[TRACTUS_NDI_RECEIVER_COUNT];
+    struct tractus_ndi_worker_context
+        output_sender_contexts[TRACTUS_NDI_OUTPUT_SENDER_COUNT];
+    struct tractus_ndi_worker_context receiver_contexts[TRACTUS_NDI_RECEIVER_COUNT];
     pthread_t discovery_thread;
     pthread_t control_thread;
 };
@@ -130,6 +161,10 @@ void tractus_ndi_mono_discard(struct tractus_ndi_mono_ring *ring, uint32_t count
 
 uint64_t tractus_ndi_stereo_available(const struct tractus_ndi_stereo_ring *ring);
 void tractus_ndi_stereo_clear(struct tractus_ndi_stereo_ring *ring);
+void tractus_ndi_stereo_push(
+    struct tractus_ndi_stereo_ring *ring,
+    float *const sources[TRACTUS_NDI_CHANNEL_COUNT],
+    uint32_t count);
 void tractus_ndi_stereo_push_frame(
     struct tractus_ndi_stereo_ring *ring,
     const NDIlib_audio_frame_v3_t *frame,
@@ -140,9 +175,11 @@ void tractus_ndi_stereo_pop(
     struct tractus_ndi_stereo_ring *ring,
     float *destinations[TRACTUS_NDI_CHANNEL_COUNT],
     uint32_t count);
+void tractus_ndi_stereo_discard(struct tractus_ndi_stereo_ring *ring, uint32_t count);
 
 bool tractus_ndi_valid_name(const char *name, size_t maximum, bool allow_empty);
 void *tractus_ndi_sender_thread_main(void *userdata);
+void *tractus_ndi_output_sender_thread_main(void *userdata);
 void *tractus_ndi_receiver_thread_main(void *userdata);
 void *tractus_ndi_discovery_thread_main(void *userdata);
 int tractus_ndi_create_control_socket(struct tractus_ndi_data *data);

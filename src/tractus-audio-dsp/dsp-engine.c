@@ -33,8 +33,10 @@ void tractus_dsp_parameters_initialize(struct tractus_dsp_parameters *parameters
     }
     atomic_init(&parameters->sidetone_enabled, false);
     atomic_init(&parameters->sidetone_gain, 1.0f);
-    atomic_init(&parameters->ndi_receiver_enabled, false);
-    atomic_init(&parameters->ndi_receiver_gain, 1.0f);
+    for (unsigned receiver = 0; receiver < TRACTUS_DSP_NDI_RECEIVER_COUNT; receiver++) {
+        atomic_init(&parameters->ndi_receiver_enabled[receiver], false);
+        atomic_init(&parameters->ndi_receiver_gain[receiver], 1.0f);
+    }
 }
 
 static void publish_meter_frame(struct tractus_dsp_data *data)
@@ -112,9 +114,12 @@ static void on_process(void *userdata, struct spa_io_position *position)
     }
     inputs[TRACTUS_DSP_SIDETONE_SOURCE][0] = pw_filter_get_dsp_buffer(
         data->input_ports[TRACTUS_DSP_SIDETONE_SOURCE][0], sample_count);
-    for (unsigned channel = 0; channel < TRACTUS_DSP_CHANNEL_COUNT; channel++) {
-        inputs[TRACTUS_DSP_NDI_RECEIVER_SOURCE][channel] = pw_filter_get_dsp_buffer(
-            data->input_ports[TRACTUS_DSP_NDI_RECEIVER_SOURCE][channel], sample_count);
+    for (unsigned receiver = 0; receiver < TRACTUS_DSP_NDI_RECEIVER_COUNT; receiver++) {
+        unsigned source = TRACTUS_DSP_FIRST_NDI_RECEIVER_SOURCE + receiver;
+        for (unsigned channel = 0; channel < TRACTUS_DSP_CHANNEL_COUNT; channel++) {
+            inputs[source][channel] = pw_filter_get_dsp_buffer(
+                data->input_ports[source][channel], sample_count);
+        }
     }
     for (unsigned channel = 0; channel < TRACTUS_DSP_CHANNEL_COUNT; channel++) {
         outputs[channel] = pw_filter_get_dsp_buffer(
@@ -143,10 +148,14 @@ static void on_process(void *userdata, struct spa_io_position *position)
         &data->parameters.sidetone_enabled, memory_order_relaxed);
     float sidetone_gain = atomic_load_explicit(
         &data->parameters.sidetone_gain, memory_order_relaxed);
-    bool ndi_receiver_enabled = atomic_load_explicit(
-        &data->parameters.ndi_receiver_enabled, memory_order_relaxed);
-    float ndi_receiver_gain = atomic_load_explicit(
-        &data->parameters.ndi_receiver_gain, memory_order_relaxed);
+    bool ndi_receiver_enabled[TRACTUS_DSP_NDI_RECEIVER_COUNT];
+    float ndi_receiver_gain[TRACTUS_DSP_NDI_RECEIVER_COUNT];
+    for (unsigned receiver = 0; receiver < TRACTUS_DSP_NDI_RECEIVER_COUNT; receiver++) {
+        ndi_receiver_enabled[receiver] = atomic_load_explicit(
+            &data->parameters.ndi_receiver_enabled[receiver], memory_order_relaxed);
+        ndi_receiver_gain[receiver] = atomic_load_explicit(
+            &data->parameters.ndi_receiver_gain[receiver], memory_order_relaxed);
+    }
 
     float static_gain_coefficient = smoothing_coefficient(5.0f, sample_rate);
     float duck_coefficient = smoothing_coefficient(
@@ -154,8 +163,8 @@ static void on_process(void *userdata, struct spa_io_position *position)
     float duck_target = duck_enabled && data->duck_active
         ? powf(10.0f, -duck_depth_db / 20.0f)
         : 1.0f;
-    double trigger_sum_squares[TRACTUS_DSP_DEVICE_COUNT + 1U] = { 0.0 };
-    uint64_t trigger_samples[TRACTUS_DSP_DEVICE_COUNT + 1U] = { 0 };
+    double trigger_sum_squares[TRACTUS_DSP_MIX_SOURCE_COUNT] = { 0.0 };
+    uint64_t trigger_samples[TRACTUS_DSP_MIX_SOURCE_COUNT] = { 0 };
 
     for (uint32_t sample = 0; sample < sample_count; sample++) {
         float mixed[TRACTUS_DSP_CHANNEL_COUNT] = { 0.0f, 0.0f };
@@ -196,35 +205,49 @@ static void on_process(void *userdata, struct spa_io_position *position)
             }
         }
 
-        for (unsigned source = TRACTUS_DSP_SIDETONE_SOURCE;
-             source < TRACTUS_DSP_MIX_SOURCE_COUNT;
-             source++) {
-            bool source_enabled = source == TRACTUS_DSP_SIDETONE_SOURCE
-                ? sidetone_enabled
-                : ndi_receiver_enabled;
-            float source_gain = source == TRACTUS_DSP_SIDETONE_SOURCE
-                ? sidetone_gain
-                : ndi_receiver_gain;
-            float audible_target = source_enabled ? source_gain : 0.0f;
+        unsigned sidetone_source = TRACTUS_DSP_SIDETONE_SOURCE;
+        float sidetone_target = sidetone_enabled ? sidetone_gain : 0.0f;
+        data->source_gain_state[sidetone_source] += static_gain_coefficient *
+            (sidetone_target - data->source_gain_state[sidetone_source]);
+        for (unsigned channel = 0; channel < TRACTUS_DSP_CHANNEL_COUNT; channel++) {
+            float *input = inputs[sidetone_source][0];
+            float raw = input == NULL ? 0.0f : input[sample];
+            if (channel == 0 && (trigger_mask & 1U) != 0U) {
+                trigger_sum_squares[0] += (double)raw * raw;
+                trigger_samples[0]++;
+            }
+            float metered = raw * sidetone_gain;
+            float absolute_metered = fabsf(metered);
+            if (absolute_metered > data->meter_source_peak[sidetone_source])
+                data->meter_source_peak[sidetone_source] = absolute_metered;
+            data->meter_source_sum_squares[sidetone_source] +=
+                (double)metered * metered;
+            mixed[channel] += raw * data->source_gain_state[sidetone_source];
+        }
+
+        for (unsigned receiver = 0; receiver < TRACTUS_DSP_NDI_RECEIVER_COUNT; receiver++) {
+            unsigned source = TRACTUS_DSP_FIRST_NDI_RECEIVER_SOURCE + receiver;
+            float source_gain = ndi_receiver_gain[receiver];
+            float audible_target = ndi_receiver_enabled[receiver] ? source_gain : 0.0f;
             data->source_gain_state[source] += static_gain_coefficient *
                 (audible_target - data->source_gain_state[source]);
-
             for (unsigned channel = 0; channel < TRACTUS_DSP_CHANNEL_COUNT; channel++) {
-                float *input = source == TRACTUS_DSP_SIDETONE_SOURCE
-                    ? inputs[TRACTUS_DSP_SIDETONE_SOURCE][0]
-                    : inputs[TRACTUS_DSP_NDI_RECEIVER_SOURCE][channel];
+                float *input = inputs[source][channel];
                 float raw = input == NULL ? 0.0f : input[sample];
-                if (source == TRACTUS_DSP_SIDETONE_SOURCE && channel == 0 &&
-                    (trigger_mask & 1U) != 0U) {
-                    trigger_sum_squares[0] += (double)raw * raw;
-                    trigger_samples[0]++;
-                }
                 float metered = raw * source_gain;
                 float absolute_metered = fabsf(metered);
                 if (absolute_metered > data->meter_source_peak[source])
                     data->meter_source_peak[source] = absolute_metered;
                 data->meter_source_sum_squares[source] += (double)metered * metered;
-                mixed[channel] += raw * data->source_gain_state[source];
+                float audible = raw * data->source_gain_state[source];
+                if ((trigger_mask & (1U << source)) != 0U) {
+                    trigger_sum_squares[source] += (double)audible * audible;
+                    trigger_samples[source]++;
+                }
+                float dynamic_gain = (trigger_mask & (1U << source)) != 0U
+                    ? 1.0f
+                    : data->duck_gain_state;
+                mixed[channel] += audible * dynamic_gain;
             }
         }
 
@@ -239,7 +262,7 @@ static void on_process(void *userdata, struct spa_io_position *position)
     }
 
     float trigger_block_power = 0.0f;
-    for (unsigned source = 0; source <= TRACTUS_DSP_DEVICE_COUNT; source++) {
+    for (unsigned source = 0; source < TRACTUS_DSP_MIX_SOURCE_COUNT; source++) {
         if (trigger_samples[source] == 0)
             continue;
         float source_power = (float)(

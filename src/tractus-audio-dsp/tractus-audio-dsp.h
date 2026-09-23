@@ -16,9 +16,10 @@
 
 #define TRACTUS_DSP_DEVICE_COUNT 4U
 #define TRACTUS_DSP_CHANNEL_COUNT 2U
-#define TRACTUS_DSP_MIX_SOURCE_COUNT 6U
+#define TRACTUS_DSP_NDI_RECEIVER_COUNT 4U
+#define TRACTUS_DSP_MIX_SOURCE_COUNT 9U
 #define TRACTUS_DSP_SIDETONE_SOURCE 4U
-#define TRACTUS_DSP_NDI_RECEIVER_SOURCE 5U
+#define TRACTUS_DSP_FIRST_NDI_RECEIVER_SOURCE 5U
 #define TRACTUS_DSP_METER_RING_SIZE 64U
 #define TRACTUS_DSP_CONTROL_BUFFER_SIZE 2048U
 #define TRACTUS_DSP_DEFAULT_SAMPLE_RATE 48000.0f
@@ -42,8 +43,8 @@ struct tractus_dsp_parameters {
     _Atomic bool output_solo[TRACTUS_DSP_DEVICE_COUNT];
     _Atomic bool sidetone_enabled;
     _Atomic float sidetone_gain;
-    _Atomic bool ndi_receiver_enabled;
-    _Atomic float ndi_receiver_gain;
+    _Atomic bool ndi_receiver_enabled[TRACTUS_DSP_NDI_RECEIVER_COUNT];
+    _Atomic float ndi_receiver_gain[TRACTUS_DSP_NDI_RECEIVER_COUNT];
 };
 
 struct tractus_dsp_meter_frame {

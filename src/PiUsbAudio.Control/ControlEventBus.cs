@@ -14,8 +14,32 @@ public sealed record DspMeterState(
     double DuckGainReductionDb,
     IReadOnlyList<DspDeviceMeter> Devices,
     DspMixMeter Sidetone,
-    DspMixMeter NdiReceiver,
-    DspMixMeter Mix);
+    IReadOnlyList<DspMixMeter> NdiReceivers,
+    DspMixMeter Mix)
+{
+    public DspMixMeter NdiReceiver => NdiReceivers.FirstOrDefault() ?? new(-120.0, -120.0);
+}
+
+public sealed record NdiSenderStatus(
+    int Number,
+    bool Enabled,
+    bool Online,
+    int Connections,
+    double PeakDbfs,
+    double RmsDbfs,
+    double QueueMilliseconds,
+    ulong Underruns,
+    ulong Overruns);
+
+public sealed record NdiReceiverStatus(
+    int Number,
+    bool Enabled,
+    bool Connected,
+    double PeakDbfs,
+    double RmsDbfs,
+    double QueueMilliseconds,
+    ulong Underruns,
+    ulong Overruns);
 
 public sealed record NdiAudioStatus(
     DateTimeOffset Timestamp,
@@ -28,13 +52,18 @@ public sealed record NdiAudioStatus(
     double QueueMilliseconds,
     ulong Underruns,
     ulong Overruns,
-    bool ReceiverEnabled,
-    bool ReceiverConnected,
-    double ReceiverPeakDbfs,
-    double ReceiverRmsDbfs,
-    double ReceiverQueueMilliseconds,
-    ulong ReceiverUnderruns,
-    ulong ReceiverOverruns);
+    IReadOnlyList<NdiSenderStatus> OutputSenders,
+    IReadOnlyList<NdiReceiverStatus> Receivers)
+{
+    private NdiReceiverStatus? FirstReceiver => Receivers.FirstOrDefault();
+    public bool ReceiverEnabled => FirstReceiver?.Enabled ?? false;
+    public bool ReceiverConnected => FirstReceiver?.Connected ?? false;
+    public double ReceiverPeakDbfs => FirstReceiver?.PeakDbfs ?? -120.0;
+    public double ReceiverRmsDbfs => FirstReceiver?.RmsDbfs ?? -120.0;
+    public double ReceiverQueueMilliseconds => FirstReceiver?.QueueMilliseconds ?? 0.0;
+    public ulong ReceiverUnderruns => FirstReceiver?.Underruns ?? 0;
+    public ulong ReceiverOverruns => FirstReceiver?.Overruns ?? 0;
+}
 
 public sealed record NdiSourceList(
     DateTimeOffset Timestamp,

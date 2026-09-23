@@ -24,22 +24,19 @@ static bool parameters_are_valid(
     const int solo[TRACTUS_DSP_DEVICE_COUNT],
     int sidetone_enabled,
     float sidetone_gain,
-    int ndi_receiver_enabled,
-    float ndi_receiver_gain)
+    const int ndi_receiver_enabled[TRACTUS_DSP_NDI_RECEIVER_COUNT],
+    const float ndi_receiver_gain[TRACTUS_DSP_NDI_RECEIVER_COUNT])
 {
     if (!isfinite(master_gain) || master_gain < 0.0f || master_gain > 1.5f ||
         (duck_enabled != 0 && duck_enabled != 1) ||
-        trigger_mask < 1 || trigger_mask >= (1 << (TRACTUS_DSP_DEVICE_COUNT + 1U)) ||
+        trigger_mask < 1 || trigger_mask >= (1 << TRACTUS_DSP_MIX_SOURCE_COUNT) ||
         threshold_dbfs < -90.0f || threshold_dbfs > 0.0f ||
         duck_depth_db < 0.0f || duck_depth_db > 60.0f ||
         attack_ms < 1.0f || attack_ms > 2000.0f ||
         hold_ms < 0.0f || hold_ms > 5000.0f ||
         release_ms < 1.0f || release_ms > 10000.0f ||
         (sidetone_enabled != 0 && sidetone_enabled != 1) ||
-        !isfinite(sidetone_gain) || sidetone_gain < 0.0f || sidetone_gain > 1.5f ||
-        (ndi_receiver_enabled != 0 && ndi_receiver_enabled != 1) ||
-        !isfinite(ndi_receiver_gain) || ndi_receiver_gain < 0.0f ||
-            ndi_receiver_gain > 1.5f) {
+        !isfinite(sidetone_gain) || sidetone_gain < 0.0f || sidetone_gain > 1.5f) {
         return false;
     }
 
@@ -47,6 +44,13 @@ static bool parameters_are_valid(
         if ((enabled[device] != 0 && enabled[device] != 1) ||
             !isfinite(gain[device]) || gain[device] < 0.0f || gain[device] > 1.5f ||
             (solo[device] != 0 && solo[device] != 1)) {
+            return false;
+        }
+    }
+    for (unsigned receiver = 0; receiver < TRACTUS_DSP_NDI_RECEIVER_COUNT; receiver++) {
+        if ((ndi_receiver_enabled[receiver] != 0 && ndi_receiver_enabled[receiver] != 1) ||
+            !isfinite(ndi_receiver_gain[receiver]) ||
+            ndi_receiver_gain[receiver] < 0.0f || ndi_receiver_gain[receiver] > 1.5f) {
             return false;
         }
     }
@@ -68,13 +72,13 @@ static bool apply_set_command(struct tractus_dsp_data *data, const char *command
     int solo[TRACTUS_DSP_DEVICE_COUNT];
     int sidetone_enabled;
     float sidetone_gain;
-    int ndi_receiver_enabled;
-    float ndi_receiver_gain;
+    int ndi_receiver_enabled[TRACTUS_DSP_NDI_RECEIVER_COUNT];
+    float ndi_receiver_gain[TRACTUS_DSP_NDI_RECEIVER_COUNT];
 
     int parsed = sscanf(command,
         "SET %f %d %d %f %f %f %f %f "
         "%d %f %d %d %f %d %d %f %d %d %f %d "
-        "%d %f %d %f",
+        "%d %f %d %f %d %f %d %f %d %f",
         &master_gain, &duck_enabled, &trigger_mask, &threshold_dbfs,
         &duck_depth_db, &attack_ms, &hold_ms, &release_ms,
         &enabled[0], &gain[0], &solo[0],
@@ -82,8 +86,11 @@ static bool apply_set_command(struct tractus_dsp_data *data, const char *command
         &enabled[2], &gain[2], &solo[2],
         &enabled[3], &gain[3], &solo[3],
         &sidetone_enabled, &sidetone_gain,
-        &ndi_receiver_enabled, &ndi_receiver_gain);
-    if (parsed != 24 || !parameters_are_valid(
+        &ndi_receiver_enabled[0], &ndi_receiver_gain[0],
+        &ndi_receiver_enabled[1], &ndi_receiver_gain[1],
+        &ndi_receiver_enabled[2], &ndi_receiver_gain[2],
+        &ndi_receiver_enabled[3], &ndi_receiver_gain[3]);
+    if (parsed != 30 || !parameters_are_valid(
             master_gain, duck_enabled, trigger_mask, threshold_dbfs,
             duck_depth_db, attack_ms, hold_ms, release_ms, enabled, gain, solo,
             sidetone_enabled, sidetone_gain, ndi_receiver_enabled,
@@ -125,14 +132,16 @@ static bool apply_set_command(struct tractus_dsp_data *data, const char *command
         memory_order_relaxed);
     atomic_store_explicit(
         &data->parameters.sidetone_gain, sidetone_gain, memory_order_relaxed);
-    atomic_store_explicit(
-        &data->parameters.ndi_receiver_enabled,
-        ndi_receiver_enabled != 0,
-        memory_order_relaxed);
-    atomic_store_explicit(
-        &data->parameters.ndi_receiver_gain,
-        ndi_receiver_gain,
-        memory_order_relaxed);
+    for (unsigned receiver = 0; receiver < TRACTUS_DSP_NDI_RECEIVER_COUNT; receiver++) {
+        atomic_store_explicit(
+            &data->parameters.ndi_receiver_enabled[receiver],
+            ndi_receiver_enabled[receiver] != 0,
+            memory_order_relaxed);
+        atomic_store_explicit(
+            &data->parameters.ndi_receiver_gain[receiver],
+            ndi_receiver_gain[receiver],
+            memory_order_relaxed);
+    }
     return true;
 }
 
@@ -146,8 +155,8 @@ static void send_meter_frame(
         data->meter_ring[sequence % TRACTUS_DSP_METER_RING_SIZE];
     char message[TRACTUS_DSP_CONTROL_BUFFER_SIZE];
     int length = snprintf(message, sizeof(message),
-        "METER %u %d %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f "
-        "%.3f %.3f %.3f %.3f %.3f %.3f",
+        "METER2 %u %d %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f "
+        "%.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f",
         frame.sequence,
         frame.ducking_active ? 1 : 0,
         frame.duck_gain_reduction_db,
@@ -157,8 +166,14 @@ static void send_meter_frame(
         frame.source_peak_dbfs[3], frame.source_rms_dbfs[3],
         frame.source_peak_dbfs[TRACTUS_DSP_SIDETONE_SOURCE],
         frame.source_rms_dbfs[TRACTUS_DSP_SIDETONE_SOURCE],
-        frame.source_peak_dbfs[TRACTUS_DSP_NDI_RECEIVER_SOURCE],
-        frame.source_rms_dbfs[TRACTUS_DSP_NDI_RECEIVER_SOURCE],
+        frame.source_peak_dbfs[TRACTUS_DSP_FIRST_NDI_RECEIVER_SOURCE],
+        frame.source_rms_dbfs[TRACTUS_DSP_FIRST_NDI_RECEIVER_SOURCE],
+        frame.source_peak_dbfs[TRACTUS_DSP_FIRST_NDI_RECEIVER_SOURCE + 1U],
+        frame.source_rms_dbfs[TRACTUS_DSP_FIRST_NDI_RECEIVER_SOURCE + 1U],
+        frame.source_peak_dbfs[TRACTUS_DSP_FIRST_NDI_RECEIVER_SOURCE + 2U],
+        frame.source_rms_dbfs[TRACTUS_DSP_FIRST_NDI_RECEIVER_SOURCE + 2U],
+        frame.source_peak_dbfs[TRACTUS_DSP_FIRST_NDI_RECEIVER_SOURCE + 3U],
+        frame.source_rms_dbfs[TRACTUS_DSP_FIRST_NDI_RECEIVER_SOURCE + 3U],
         frame.mix_peak_dbfs, frame.mix_rms_dbfs);
     if (length > 0 && (size_t)length < sizeof(message)) {
         (void)sendto(data->control_fd, message, (size_t)length, MSG_DONTWAIT,

@@ -22,8 +22,8 @@ camel-case.
   audio reaches the physical playback device.
 - **Sidetone** is the selected physical capture channel duplicated to the
   physical playback device; it is muted by default.
-- **NDI return** is a discovered NDI source converted to 48 kHz stereo and
-  mixed into the physical playback device.
+- An **NDI return** is one of four discovered NDI sources converted to 48 kHz
+  stereo and mixed into the physical playback device.
 
 Device numbers are always `1` through `4`.
 
@@ -44,7 +44,7 @@ Example response:
   "capabilities": [
     "ducking", "multi-trigger-ducking", "self-ducking", "solo",
     "push-meters", "server-sent-events",
-    "sidetone", "ndi-audio", "ndi-audio-receiver", "ndi-source-discovery",
+    "sidetone", "ndi-audio", "ndi-output-senders", "ndi-audio-receivers", "ndi-source-discovery",
     "push-ndi-status", "push-ndi-sources", "usb-gadget-diagnostics",
     "linux-input-controls", "user-input-mapping", "push-to-talk", "jog-volume",
     "friendly-channel-names", "usb-descriptor-names", "usb-gadget-restart"
@@ -73,6 +73,8 @@ HTTP 200 with the updated [control state](#control-state) as JSON.
 | `POST` | `/api/outputs/mute-all` | Remove all four PC playback endpoints from the mix |
 | `POST` | `/api/outputs/unmute-all` | Add all four PC playback endpoints to the mix |
 | `POST` | `/api/outputs/{1-4}/gain?percent={0-150}` | Set one playback endpoint's mix level |
+| `POST` | `/api/outputs/{1-4}/ndi/enable` | Publish the raw stereo output as NDI |
+| `POST` | `/api/outputs/{1-4}/ndi/disable` | Stop that output's NDI sender |
 | `POST` | `/api/outputs/{1-4}/solo` | Add one output to the active solo set |
 | `POST` | `/api/outputs/{1-4}/solo-exclusive` | Clear other solos and solo only this output |
 | `POST` | `/api/outputs/{1-4}/unsolo` | Remove one output from the solo set |
@@ -134,25 +136,25 @@ rebuild the PipeWire graph.
 
 ## Ducking / sidechain controls
 
-Select any combination of Self and outputs 1-4 as trigger sources. Each source
+Select any combination of Self, outputs 1-4, and NDI receivers 1-4 as trigger sources. Each source
 is evaluated independently and the loudest detector level controls the shared
-duck gain. Selected USB outputs remain at their normal level; only unselected
-USB outputs are attenuated. Self uses the selected physical capture channel
-directly and works while sidetone is muted. At least one trigger must remain
-selected. Settings apply and persist immediately.
+duck gain. Selected USB or NDI trigger sources remain at their normal level;
+unselected USB outputs and NDI returns are attenuated. Self uses the selected
+physical capture channel directly and works while sidetone is muted. At least
+one trigger must remain selected. Settings apply and persist immediately.
 
 | Method | Path | Range/meaning |
 | --- | --- | --- |
 | `POST` | `/api/ducking/enable` | Enable sidechain ducking |
 | `POST` | `/api/ducking/bypass` | Bypass sidechain ducking with a click-free return to unity |
-| `GET` | `/api/ducking/triggers` | Read `{ sources: [0..4] }`; `0` means Self |
-| `PUT` | `/api/ducking/triggers` | Replace the trigger set with `{ sources: [0,1,2] }` |
-| `POST` | `/api/ducking/triggers/{0-4}/enable` | Add Self (`0`) or output 1-4 as a trigger |
-| `POST` | `/api/ducking/triggers/{0-4}/disable` | Remove a trigger; the final trigger cannot be removed |
-| `POST` | `/api/ducking/priority?device={0-4}` | Compatibility: replace the set with one trigger |
+| `GET` | `/api/ducking/triggers` | Read `{ sources: [0..8] }`: `0` Self, `1-4` outputs, `5-8` NDI receivers |
+| `PUT` | `/api/ducking/triggers` | Replace the trigger set with `{ sources: [0,1,5] }` |
+| `POST` | `/api/ducking/triggers/{0-8}/enable` | Add a trigger source |
+| `POST` | `/api/ducking/triggers/{0-8}/disable` | Remove a trigger; the final trigger cannot be removed |
+| `POST` | `/api/ducking/priority?device={0-8}` | Compatibility: replace the set with one trigger |
 | `POST` | `/api/ducking/priority-self` | Compatibility: replace the set with Self only |
 | `POST` | `/api/ducking/threshold?dbfs={-90..0}` | Detector threshold in dBFS |
-| `POST` | `/api/ducking/depth?db={0..60}` | Attenuation applied to non-trigger outputs |
+| `POST` | `/api/ducking/depth?db={0..60}` | Attenuation applied to non-trigger outputs and NDI returns |
 | `POST` | `/api/ducking/attack?milliseconds={1..2000}` | Gain-reduction attack time |
 | `POST` | `/api/ducking/hold?milliseconds={0..5000}` | Hold time after signal falls below threshold and hysteresis |
 | `POST` | `/api/ducking/release?milliseconds={1..10000}` | Return-to-normal time |
@@ -204,13 +206,16 @@ receivers on the LAN.
   "queueMilliseconds": 49.8,
   "underruns": 0,
   "overruns": 0,
-  "receiverEnabled": true,
-  "receiverConnected": true,
-  "receiverPeakDbfs": -10.2,
-  "receiverRmsDbfs": -18.6,
-  "receiverQueueMilliseconds": 30.0,
-  "receiverUnderruns": 0,
-  "receiverOverruns": 0
+  "outputSenders": [
+    { "number": 1, "enabled": true, "online": true, "connections": 1,
+      "peakDbfs": -7.2, "rmsDbfs": -16.4, "queueMilliseconds": 49.8,
+      "underruns": 0, "overruns": 0 }
+  ],
+  "receivers": [
+    { "number": 1, "enabled": true, "connected": true,
+      "peakDbfs": -10.2, "rmsDbfs": -18.6, "queueMilliseconds": 30.0,
+      "underruns": 0, "overruns": 0 }
+  ]
 }
 ```
 
@@ -218,29 +223,47 @@ Peak/RMS describe the audio actually submitted to NDI. Queue and error counters
 diagnose clocking or scheduling problems. Applications should consume the
 `ndi` SSE event instead of polling this endpoint for live feedback.
 
-## NDI audio receiver
+## NDI output senders
 
-The audio-only receiver subscribes by full discovered NDI source name. It asks
+Each USB output has an independent, default-off NDI sender. The source is a
+direct stereo tap of the host-to-Pi stream, so physical-mix mute, gain, solo,
+ducking, and master controls do not alter it. Its name is automatic:
+`Audio Out (N)` without a friendly name, or `Audio Out (N - Friendly Name)`.
+Changing a channel's friendly name recreates an enabled sender with the new
+name.
+
+| Method | Path | Meaning |
+| --- | --- | --- |
+| `POST` | `/api/outputs/{1-4}/ndi/enable` | Create and route one output sender |
+| `POST` | `/api/outputs/{1-4}/ndi/disable` | Remove its route and destroy the sender |
+
+## NDI audio receivers
+
+Each of four audio-only receivers subscribes by full discovered NDI source
+name. Each asks
 framesync for exactly 48 kHz, two-channel audio in the number of samples needed
 by its queue, then routes the stereo result through the NDI-return DSP fader to
-the physical playback device. It is disabled by default.
+the physical playback device. All four are disabled by default.
 
 | Method | Path | Meaning |
 | --- | --- | --- |
 | `GET` | `/api/ndi/sources` | Latest discovered source list |
-| `GET` | `/api/ndi/receiver` | Read `{ enabled, sourceName, gain }` |
-| `PUT` | `/api/ndi/receiver` | Replace all receiver settings with a JSON body |
-| `POST` | `/api/ndi/receiver/source?name={full source name}` | Select a source |
-| `POST` | `/api/ndi/receiver/enable` | Start receiving the selected source |
-| `POST` | `/api/ndi/receiver/disable` | Stop the receiver and mute its return |
-| `POST` | `/api/ndi/receiver/gain?percent={0-150}` | Set the live NDI-return fader |
+| `GET` | `/api/ndi/receivers` | Read all four `{ number, enabled, sourceName, gain }` settings |
+| `GET` | `/api/ndi/receivers/{1-4}` | Read one receiver |
+| `PUT` | `/api/ndi/receivers/{1-4}` | Replace one receiver's settings |
+| `POST` | `/api/ndi/receivers/{1-4}/source?name={full source name}` | Select a source |
+| `POST` | `/api/ndi/receivers/{1-4}/enable` | Start one receiver |
+| `POST` | `/api/ndi/receivers/{1-4}/disable` | Stop one receiver and mute its return |
+| `POST` | `/api/ndi/receivers/{1-4}/gain?percent={0-150}` | Set one live NDI-return fader |
+
+The singular `/api/ndi/receiver...` endpoints remain aliases for receiver 1.
 
 Example:
 
 ```bash
-curl -X POST 'http://192.168.1.91:5055/api/ndi/receiver/source?name=STUDIO%20%28Program%29'
-curl -X POST http://192.168.1.91:5055/api/ndi/receiver/enable
-curl -X POST 'http://192.168.1.91:5055/api/ndi/receiver/gain?percent=75'
+curl -X POST 'http://192.168.1.91:5055/api/ndi/receivers/2/source?name=STUDIO%20%28Program%29'
+curl -X POST http://192.168.1.91:5055/api/ndi/receivers/2/enable
+curl -X POST 'http://192.168.1.91:5055/api/ndi/receivers/2/gain?percent=75'
 ```
 
 An enabled receiver requires a non-empty source name. Source names occupy at
@@ -355,6 +378,24 @@ dial starts in microphone mode, adjusts the configured mic send, and toggles
 between microphone and physical-output master mode on click. Gains are clamped
 to 0-150%.
 
+Each channel also accepts `doubleClickLatch` (default `true`). Two short taps
+whose press events are within `doubleClickMilliseconds` (default 300; range
+100–1000) latch the configured press state. The next press restores the release
+state and consumes its subsequent release. Single holds remain immediate;
+auto-repeat, duplicate events, and a long hold followed by a tap do not latch.
+Runtime `status.latchedChannels` contains the channel numbers currently
+latched and is also included in the `controls` SSE event. Latches are
+session-local and cleared on disconnect, reload, or normal shutdown.
+
+Optional whole-keyboard feedback uses `ledFeedbackEnabled` (default false) and
+`ledLayer` (1–3, default 1). Live feedback does not send configuration commits.
+Red means any of the four mic inputs is enabled; green
+means all four are disabled. `GET /api/control-devices` additionally returns
+`ledStatus` with `enabled`, `connected`, `color`, `message`, and `error`;
+the `keyboard-led` SSE event publishes changes and an initial snapshot.
+The status describes the last successfully sent color, not hardware readback.
+See [protocol and diagnostics](keyboard-led.md).
+
 ## Control state
 
 ```http
@@ -384,7 +425,12 @@ Abbreviated example:
       "holdMilliseconds": 150.0,
       "releaseMilliseconds": 400.0
     },
-    "ndiReceiver": { "enabled": false, "sourceName": "", "gain": 1.0 },
+    "ndiReceivers": [
+      { "number": 1, "enabled": false, "sourceName": "", "gain": 1.0 },
+      { "number": 2, "enabled": false, "sourceName": "", "gain": 1.0 },
+      { "number": 3, "enabled": false, "sourceName": "", "gain": 1.0 },
+      { "number": 4, "enabled": false, "sourceName": "", "gain": 1.0 }
+    ],
     "devices": [
       {
         "number": 1,
@@ -393,7 +439,8 @@ Abbreviated example:
         "inputGain": 1.0,
         "outputEnabled": true,
         "outputGain": 0.2,
-        "outputSolo": false
+        "outputSolo": false,
+        "ndiOutputEnabled": true
       }
     ]
   },
@@ -450,7 +497,10 @@ frame. Values are sample-peak and RMS dBFS over an approximately 100 ms window:
     { "number": 1, "peakDbfs": -2.96, "rmsDbfs": -12.92 }
   ],
   "sidetone": { "peakDbfs": -18.2, "rmsDbfs": -27.4 },
-  "ndiReceiver": { "peakDbfs": -9.1, "rmsDbfs": -17.8 },
+  "ndiReceivers": [
+    { "peakDbfs": -9.1, "rmsDbfs": -17.8 },
+    { "peakDbfs": -120.0, "rmsDbfs": -120.0 }
+  ],
   "mix": { "peakDbfs": -2.96, "rmsDbfs": -12.92 }
 }
 ```
@@ -461,10 +511,10 @@ output format. These are sample meters, not oversampled true-peak meters.
 Each device meter is post-fader but pre-mute, pre-solo, and pre-duck, so input
 from the host remains visible while that output mix is muted. The `mix` meter
 is post-mix and post-master and therefore represents audio sent to the physical
-output. `sidetone` and `ndiReceiver` are also post-fader/pre-mute, so their
+output. `sidetone` and `ndiReceivers` are also post-fader/pre-mute, so their
 signals remain visible while their monitor paths are muted. During active
-ducking, subtract `duckGainReductionDb` from each unselected device meter to
-obtain the current ducked dBFS value.
+ducking, subtract `duckGainReductionDb` from each unselected device or
+NDI-receiver meter to obtain the current ducked dBFS value.
 
 `GET /api/meters` is useful for diagnostics. Applications should use the push
 stream below for live displays instead of polling it.
@@ -492,7 +542,7 @@ event: meters
 data: {"sequence":79,"duckingActive":false,...}
 
 event: ndi
-data: {"sequence":41,"senderOnline":true,"receiverConnected":true,...}
+data: {"sequence":41,"senderOnline":true,"outputSenders":[...],"receivers":[...]}
 
 event: ndi-sources
 data: {"sequence":7,"sources":["STUDIO (Program)","STAGE (Mix)"]}

@@ -11,7 +11,7 @@
   "ndiReceiver": { "enabled": false, "sourceName": "", "gain": 1.0 },
   "reconcileIntervalSeconds": 2,
   "devices": [
-    { "number": 1, "inputEnabled": true, "outputEnabled": true, "outputGain": 1.0 },
+    { "number": 1, "friendlyName": "To Discord", "inputEnabled": true, "outputEnabled": true, "outputGain": 1.0, "ndiOutputEnabled": true },
     { "number": 2, "inputEnabled": true, "outputEnabled": true, "outputGain": 0.2 },
     { "number": 3, "inputEnabled": true, "outputEnabled": true, "outputGain": 0.5 },
     { "number": 4, "inputEnabled": true, "outputEnabled": true, "outputGain": 0.0 }

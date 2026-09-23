@@ -25,10 +25,17 @@
     "sourceName": "Tractus USB Audio Microphone"
   },
   "ndiReceiver": {
+    "number": 1,
     "enabled": false,
     "sourceName": "",
     "gain": 1.0
   },
+  "ndiReceivers": [
+    { "number": 1, "enabled": false, "sourceName": "", "gain": 1.0 },
+    { "number": 2, "enabled": false, "sourceName": "", "gain": 1.0 },
+    { "number": 3, "enabled": false, "sourceName": "", "gain": 1.0 },
+    { "number": 4, "enabled": false, "sourceName": "", "gain": 1.0 }
+  ],
   "keyboardControl": {
     "enabled": false,
     "deviceIds": [],
@@ -46,9 +53,9 @@
   },
   "reconcileIntervalSeconds": 10,
   "devices": [
-    { "number": 1, "friendlyName": "", "inputEnabled": true, "inputGain": 1.0, "outputEnabled": true, "outputGain": 1.0, "outputSolo": false },
-    { "number": 2, "friendlyName": "", "inputEnabled": true, "inputGain": 1.0, "outputEnabled": true, "outputGain": 1.0, "outputSolo": false },
-    { "number": 3, "friendlyName": "", "inputEnabled": true, "inputGain": 1.0, "outputEnabled": true, "outputGain": 1.0, "outputSolo": false },
-    { "number": 4, "friendlyName": "", "inputEnabled": true, "inputGain": 1.0, "outputEnabled": true, "outputGain": 1.0, "outputSolo": false }
+    { "number": 1, "friendlyName": "", "inputEnabled": true, "inputGain": 1.0, "outputEnabled": true, "outputGain": 1.0, "outputSolo": false, "ndiOutputEnabled": false },
+    { "number": 2, "friendlyName": "", "inputEnabled": true, "inputGain": 1.0, "outputEnabled": true, "outputGain": 1.0, "outputSolo": false, "ndiOutputEnabled": false },
+    { "number": 3, "friendlyName": "", "inputEnabled": true, "inputGain": 1.0, "outputEnabled": true, "outputGain": 1.0, "outputSolo": false, "ndiOutputEnabled": false },
+    { "number": 4, "friendlyName": "", "inputEnabled": true, "inputGain": 1.0, "outputEnabled": true, "outputGain": 1.0, "outputSolo": false, "ndiOutputEnabled": false }
   ]
 }

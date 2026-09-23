@@ -58,26 +58,28 @@ static int add_input_ports(struct tractus_dsp_data *data)
         return -1;
     }
 
-    for (unsigned channel = 0; channel < TRACTUS_DSP_CHANNEL_COUNT; channel++) {
-        char port_name[32];
-        snprintf(port_name, sizeof(port_name), "input_ndi_%s",
-            channel == 0 ? "FL" : "FR");
-        data->input_ports[TRACTUS_DSP_NDI_RECEIVER_SOURCE][channel] =
-            pw_filter_add_port(
-                data->filter,
-                PW_DIRECTION_INPUT,
-                PW_FILTER_PORT_FLAG_MAP_BUFFERS,
-                sizeof(struct tractus_dsp_port),
-                pw_properties_new(
-                    PW_KEY_FORMAT_DSP, "32 bit float mono audio",
-                    PW_KEY_PORT_NAME, port_name,
-                    SPA_KEY_AUDIO_CHANNEL, channel == 0 ? "FL" : "FR",
-                    NULL),
-                NULL,
-                0);
-        if (data->input_ports[TRACTUS_DSP_NDI_RECEIVER_SOURCE][channel] == NULL) {
-            fprintf(stderr, "Could not create DSP NDI input port %s\n", port_name);
-            return -1;
+    for (unsigned receiver = 0; receiver < TRACTUS_DSP_NDI_RECEIVER_COUNT; receiver++) {
+        unsigned source = TRACTUS_DSP_FIRST_NDI_RECEIVER_SOURCE + receiver;
+        for (unsigned channel = 0; channel < TRACTUS_DSP_CHANNEL_COUNT; channel++) {
+            char port_name[32];
+            snprintf(port_name, sizeof(port_name), "input_ndi_%u_%s",
+                receiver + 1U, channel == 0 ? "FL" : "FR");
+            data->input_ports[source][channel] = pw_filter_add_port(
+                    data->filter,
+                    PW_DIRECTION_INPUT,
+                    PW_FILTER_PORT_FLAG_MAP_BUFFERS,
+                    sizeof(struct tractus_dsp_port),
+                    pw_properties_new(
+                        PW_KEY_FORMAT_DSP, "32 bit float mono audio",
+                        PW_KEY_PORT_NAME, port_name,
+                        SPA_KEY_AUDIO_CHANNEL, channel == 0 ? "FL" : "FR",
+                        NULL),
+                    NULL,
+                    0);
+            if (data->input_ports[source][channel] == NULL) {
+                fprintf(stderr, "Could not create DSP NDI input port %s\n", port_name);
+                return -1;
+            }
         }
     }
     return 0;

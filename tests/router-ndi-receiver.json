@@ -7,9 +7,15 @@
   "physicalPlaybackRightChannel": "FR",
   "physicalPlaybackGain": 1.0,
   "sidetone": { "enabled": true, "gain": 0.75 },
-  "ducking": { "enabled": true, "priorityDevice": 0, "triggerSources": [0, 1, 3], "thresholdDbfs": -30.0, "depthDb": 18.0, "attackMilliseconds": 10.0, "holdMilliseconds": 150.0, "releaseMilliseconds": 400.0 },
+  "ducking": { "enabled": true, "priorityDevice": 0, "triggerSources": [0, 1, 3, 5, 8], "thresholdDbfs": -30.0, "depthDb": 18.0, "attackMilliseconds": 10.0, "holdMilliseconds": 150.0, "releaseMilliseconds": 400.0 },
   "ndiAudio": { "enabled": false, "sourceName": "Tractus USB Audio Microphone" },
   "ndiReceiver": { "enabled": true, "sourceName": "STUDIO (Program)", "gain": 0.5 },
+  "ndiReceivers": [
+    { "number": 1, "enabled": true, "sourceName": "STUDIO (Program)", "gain": 0.5 },
+    { "number": 2, "enabled": false, "sourceName": "", "gain": 1.0 },
+    { "number": 3, "enabled": false, "sourceName": "", "gain": 1.0 },
+    { "number": 4, "enabled": true, "sourceName": "REMOTE (Guest)", "gain": 0.75 }
+  ],
   "reconcileIntervalSeconds": 2,
   "devices": [
     { "number": 1, "inputEnabled": true, "outputEnabled": true, "outputGain": 1.0 },

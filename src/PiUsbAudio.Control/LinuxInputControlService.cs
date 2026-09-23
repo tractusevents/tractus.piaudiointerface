@@ -303,8 +303,9 @@ public sealed class LinuxInputControlService(
             }
 
             using var sessionCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            var buttons = configuration.Channels.ToDictionary(channel => channel.Number, _ => new KeyboardButtonState());
             var readers = selectedDevices
-                .Select(device => ReadDeviceAsync(device, configuration, sessionCancellation.Token))
+                .Select(device => ReadDeviceAsync(device, configuration, buttons, sessionCancellation.Token))
                 .ToList();
             UpdateStatus(status with
             {
@@ -352,13 +353,16 @@ public sealed class LinuxInputControlService(
                 }
                 try
                 {
-                    if (!stoppingToken.IsCancellationRequested)
-                        await ApplyReleasedStatesAsync(configuration, stoppingToken);
+                    // A graceful stop must also release latched push-to-talk routes.
+                    using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                    await ApplyReleasedStatesAsync(configuration, cleanup.Token);
                 }
-                catch (Exception exception) when (exception is not OperationCanceledException)
+                catch (Exception exception)
                 {
                     logger.LogWarning(exception, "Could not restore keyboard-control released states");
                 }
+                lock (statusGate)
+                    UpdateStatus(status with { LatchedChannels = [] });
             }
             if (retryAfterSession && Status.ConnectedDeviceIds.Count > 0)
             {
@@ -376,6 +380,7 @@ public sealed class LinuxInputControlService(
     private async Task ReadDeviceAsync(
         LinuxInputDevice device,
         KeyboardControlConfiguration configuration,
+        Dictionary<int, KeyboardButtonState> buttons,
         CancellationToken cancellationToken)
     {
         await Task.Yield();
@@ -421,9 +426,18 @@ public sealed class LinuxInputControlService(
             var type = BinaryPrimitives.ReadUInt16LittleEndian(buffer.AsSpan(eventHeaderSize, 2));
             var code = BinaryPrimitives.ReadUInt16LittleEndian(buffer.AsSpan(eventHeaderSize + 2, 2));
             var value = BinaryPrimitives.ReadInt32LittleEndian(buffer.AsSpan(eventHeaderSize + 4, 4));
+            if (type == 0 && code == 3) // SYN_DROPPED: press/release history is no longer reliable.
+                throw new InvalidDataException("Input events were dropped; resetting channel button states.");
             if (type is not InputEventTypes.Key and not InputEventTypes.Relative)
                 continue;
-            await HandleEventAsync(device.Id, type, code, value, configuration, cancellationToken);
+            var seconds = IntPtr.Size == 8
+                ? BinaryPrimitives.ReadInt64LittleEndian(buffer)
+                : BinaryPrimitives.ReadInt32LittleEndian(buffer);
+            var microseconds = IntPtr.Size == 8
+                ? BinaryPrimitives.ReadInt64LittleEndian(buffer.AsSpan(8))
+                : BinaryPrimitives.ReadInt32LittleEndian(buffer.AsSpan(4));
+            await HandleEventAsync(device.Id, type, code, value, seconds * 1_000_000 + microseconds,
+                configuration, buttons, cancellationToken);
         }
     }
 
@@ -432,7 +446,9 @@ public sealed class LinuxInputControlService(
         ushort type,
         ushort code,
         int value,
+        long microseconds,
         KeyboardControlConfiguration configuration,
+        Dictionary<int, KeyboardButtonState> buttons,
         CancellationToken cancellationToken)
     {
         var direction = Math.Sign(value);
@@ -481,13 +497,22 @@ public sealed class LinuxInputControlService(
                 {
                     if (!Matches(channel.Button, deviceId, type, code, 1))
                         continue;
-                    if (!KeyboardChannelActions.TryGetEnabled(channel.Action, value == 1, out var enabled))
+                    if (channel.Action == KeyboardChannelActions.None)
+                        continue;
+                    var pressed = buttons[channel.Number].Handle(value, microseconds,
+                        channel.DoubleClickLatch, configuration.DoubleClickMilliseconds);
+                    if (pressed is null || !KeyboardChannelActions.TryGetEnabled(channel.Action, pressed.Value, out var enabled))
                         continue;
                     await control.SetMicrophoneEnabledAsync(
                         channel.Number,
                         enabled,
                         cancellationToken);
                 }
+                lock (statusGate)
+                    UpdateStatus(status with
+                    {
+                        LatchedChannels = buttons.Where(pair => pair.Value.Latched).Select(pair => pair.Key).Order().ToArray()
+                    });
                 if (value == 1 && Matches(configuration.DialClick, deviceId, type, code, 1))
                 {
                     lock (statusGate)

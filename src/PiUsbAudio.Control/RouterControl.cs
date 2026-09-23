@@ -26,8 +26,15 @@ public sealed class RouterControl(
         int number,
         string friendlyName,
         CancellationToken cancellationToken = default) =>
-        UpdateMetadataAsync(configuration =>
+        UpdateNdiAsync(configuration =>
             SelectDevice(configuration, number).FriendlyName = friendlyName.Trim(), cancellationToken);
+
+    public Task<ControlState> SetNdiOutputEnabledAsync(
+        int number,
+        bool enabled,
+        CancellationToken cancellationToken = default) =>
+        UpdateAsync(configuration =>
+            SelectDevice(configuration, number).NdiOutputEnabled = enabled, cancellationToken);
 
     public Task<ControlState> SetMicrophoneEnabledStatesAsync(
         IReadOnlyDictionary<int, bool> enabledStates,
@@ -77,7 +84,7 @@ public sealed class RouterControl(
         int number,
         double gain,
         CancellationToken cancellationToken = default) =>
-        UpdateAsync(configuration => SelectDevice(configuration, number).InputGain = gain, cancellationToken);
+        UpdateMicrophoneGainAsync(number, gain, cancellationToken);
 
     public Task<ControlState> SetOutputGainAsync(
         int number,
@@ -173,26 +180,66 @@ public sealed class RouterControl(
     public Task<ControlState> SetNdiReceiverEnabledAsync(
         bool enabled,
         CancellationToken cancellationToken = default) =>
-        UpdateNdiAndDspAsync(configuration => configuration.NdiReceiver.Enabled = enabled, cancellationToken);
+        SetNdiReceiverEnabledAsync(1, enabled, cancellationToken);
+
+    public Task<ControlState> SetNdiReceiverEnabledAsync(
+        int number,
+        bool enabled,
+        CancellationToken cancellationToken = default) =>
+        UpdateNdiAndDspAsync(configuration =>
+            SelectNdiReceiver(configuration, number).Enabled = enabled, cancellationToken);
 
     public Task<ControlState> SetNdiReceiverSourceAsync(
         string sourceName,
         CancellationToken cancellationToken = default) =>
-        UpdateNdiAsync(configuration => configuration.NdiReceiver.SourceName = sourceName.Trim(), cancellationToken);
+        SetNdiReceiverSourceAsync(1, sourceName, cancellationToken);
+
+    public Task<ControlState> SetNdiReceiverSourceAsync(
+        int number,
+        string sourceName,
+        CancellationToken cancellationToken = default) =>
+        UpdateNdiAsync(configuration =>
+            SelectNdiReceiver(configuration, number).SourceName = sourceName.Trim(), cancellationToken);
 
     public Task<ControlState> SetNdiReceiverGainAsync(
         double gain,
         CancellationToken cancellationToken = default) =>
-        UpdateDspAsync(configuration => configuration.NdiReceiver.Gain = gain, cancellationToken);
+        SetNdiReceiverGainAsync(1, gain, cancellationToken);
+
+    public Task<ControlState> SetNdiReceiverGainAsync(
+        int number,
+        double gain,
+        CancellationToken cancellationToken = default) =>
+        UpdateDspAsync(configuration =>
+            SelectNdiReceiver(configuration, number).Gain = gain, cancellationToken);
 
     public Task<ControlState> SetNdiReceiverConfigurationAsync(
         NdiReceiverConfiguration receiver,
         CancellationToken cancellationToken = default) =>
-        UpdateNdiAndDspAsync(configuration => configuration.NdiReceiver = new NdiReceiverConfiguration
+        UpdateNdiAndDspAsync(configuration => configuration.NdiReceivers[0] = new NdiReceiverConfiguration
         {
+            Number = 1,
             Enabled = receiver.Enabled,
             SourceName = receiver.SourceName.Trim(),
             Gain = receiver.Gain
+        }, cancellationToken);
+
+    public Task<ControlState> SetNdiReceiverConfigurationAsync(
+        int number,
+        NdiReceiverConfiguration receiver,
+        CancellationToken cancellationToken = default) =>
+        UpdateNdiAndDspAsync(configuration =>
+        {
+            var index = configuration.NdiReceivers.FindIndex(value => value.Number == number);
+            if (index < 0)
+                throw new ArgumentOutOfRangeException(nameof(number));
+            configuration.NdiReceivers[index] = new NdiReceiverConfiguration
+            {
+                Number = number,
+                Enabled = receiver.Enabled,
+                SourceName = receiver.SourceName.Trim(),
+                Gain = receiver.Gain
+            };
         }, cancellationToken);
 
     public Task<ControlState> SetMappingsAsync(
@@ -227,6 +274,21 @@ public sealed class RouterControl(
         var routing = router.LastResult;
         if (!dspResult.Success)
             routing = await router.ApplyAsync(cancellationToken);
+        var state = new ControlState(configuration, routing);
+        eventBus.Publish("state", state);
+        return state;
+    }
+
+    private async Task<ControlState> UpdateMicrophoneGainAsync(
+        int number,
+        double gain,
+        CancellationToken cancellationToken)
+    {
+        var configuration = await configStore.UpdateAsync(
+            value => SelectDevice(value, number).InputGain = gain,
+            cancellationToken);
+        var applied = await router.ApplyMicrophoneGainAsync(number, gain, cancellationToken);
+        var routing = applied ? router.LastResult : await router.ApplyAsync(cancellationToken);
         var state = new ControlState(configuration, routing);
         eventBus.Publish("state", state);
         return state;
@@ -283,5 +345,15 @@ public sealed class RouterControl(
         if (number is < 1 or > 4)
             throw new ArgumentOutOfRangeException(nameof(number), "Device number must be between 1 and 4.");
         return configuration.Devices.Single(device => device.Number == number);
+    }
+
+    private static NdiReceiverConfiguration SelectNdiReceiver(
+        RouterConfiguration configuration,
+        int number)
+    {
+        if (number is < 1 or > RouterConfiguration.NdiReceiverCount)
+            throw new ArgumentOutOfRangeException(nameof(number),
+                $"NDI receiver number must be between 1 and {RouterConfiguration.NdiReceiverCount}.");
+        return configuration.NdiReceivers.Single(receiver => receiver.Number == number);
     }
 }
