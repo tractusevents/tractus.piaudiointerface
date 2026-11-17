@@ -348,6 +348,11 @@
   </section>
 
   <section id="tab-controls" class="tab-panel panel">
+    <div class="subpanel">
+      <h2>Stream Deck Mini</h2>
+      <p id="streamDeckStatus" role="status">Checking connection…</p>
+      <p>Tap buttons 1–4 to toggle the matching microphone feed. Green means LIVE; red means MUTED. Button 6 is PANIC — MUTE ALL: every press mutes all four mic feeds. Button 5 is unassigned.</p>
+    </div>
     <div class="panel-heading">
       <h2>Keyboard &amp; dial controls</h2>
       <span id="controlHealth" class="diagnostic-state">DISABLED</span>
@@ -1121,6 +1126,10 @@ function cancelActiveRequests() {
 function startEventStream() {
   if (eventSource || document.visibilityState === 'hidden') return;
   eventSource = new EventSource('/api/events');
+  eventSource.addEventListener('stream-deck', event => {
+    const status = JSON.parse(event.data);
+    byId('streamDeckStatus').textContent = status.error || status.message;
+  });
   eventSource.addEventListener('keyboard-led', event => {
     applyKeyboardLedStatus(JSON.parse(event.data));
   });

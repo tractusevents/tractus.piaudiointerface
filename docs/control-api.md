@@ -47,7 +47,8 @@ Example response:
     "sidetone", "ndi-audio", "ndi-output-senders", "ndi-audio-receivers", "ndi-source-discovery",
     "push-ndi-status", "push-ndi-sources", "usb-gadget-diagnostics",
     "linux-input-controls", "user-input-mapping", "push-to-talk", "jog-volume",
-    "friendly-channel-names", "usb-descriptor-names", "usb-gadget-restart"
+    "friendly-channel-names", "usb-descriptor-names", "usb-gadget-restart",
+    "stream-deck-mini", "mic-toggle"
   ]
 }
 ```
@@ -65,6 +66,7 @@ HTTP 200 with the updated [control state](#control-state) as JSON.
 | --- | --- | --- |
 | `POST` | `/api/mics/{1-4}/mute` | Stop the physical capture feed to one PC mic |
 | `POST` | `/api/mics/{1-4}/unmute` | Enable the physical capture feed to one PC mic |
+| `POST` | `/api/mics/{1-4}/toggle` | Atomically toggle one PC mic feed's mute state |
 | `POST` | `/api/mics/mute-all` | Mute all four PC mic feeds |
 | `POST` | `/api/mics/unmute-all` | Enable all four PC mic feeds |
 | `POST` | `/api/mics/{1-4}/gain?percent={0-150}` | Set one mic's digital gain |
@@ -86,6 +88,17 @@ HTTP 200 with the updated [control state](#control-state) as JSON.
 
 `100` is unity gain. Values above 100 provide digital gain and can clip when
 sources are summed.
+
+## Stream Deck Mini
+
+`GET /api/stream-deck` reports the attached Mini's connection, displayed keys,
+errors, and physical button activity. The `stream-deck` SSE event provides the
+same information on connection and changes. Buttons 1–4 toggle their respective
+mic feeds; button 6 is PANIC — MUTE ALL and button 5 has no action. Every panic
+press mutes all four mic feeds, including when they are already muted.
+The optional main configuration object
+`streamDeck` accepts `enabled` (default `true`) and `brightness` (0–100, default
+30). See [Stream Deck controls](stream-deck.md) for installation and behavior.
 
 ## Friendly channel names
 

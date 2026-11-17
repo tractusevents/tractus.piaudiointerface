@@ -1,0 +1,2 @@
+# Access only the original Stream Deck Mini used by the audio controller.
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0fd9", ATTRS{idProduct}=="0063", GROUP="input", MODE="0660"

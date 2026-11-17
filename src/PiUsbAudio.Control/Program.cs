@@ -134,6 +134,9 @@ builder.Services.AddSingleton<LinuxInputControlService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<LinuxInputControlService>());
 builder.Services.AddSingleton<KeyboardLedService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<KeyboardLedService>());
+builder.Services.AddSingleton<IStreamDeckDeviceProvider, StreamDeckDeviceProvider>();
+builder.Services.AddSingleton<StreamDeckControlService>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<StreamDeckControlService>());
 builder.Services.AddHostedService<RouterReconciler>();
 builder.Services.AddSingleton<SerialControlService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<SerialControlService>());
@@ -155,7 +158,7 @@ app.MapGet("/api/info", () => Results.Ok(new
         "push-ndi-status", "push-ndi-sources", "usb-gadget-diagnostics",
         "linux-input-controls", "user-input-mapping", "push-to-talk", "jog-volume",
         "friendly-channel-names", "usb-descriptor-names", "usb-gadget-restart",
-        "double-click-latch", "keyboard-led-feedback"
+        "double-click-latch", "keyboard-led-feedback", "stream-deck-mini", "mic-toggle"
     }
 }));
 
@@ -204,6 +207,8 @@ app.MapPut("/api/mappings", async (
 
 app.MapGet("/api/state", async (RouterControl control, CancellationToken cancellationToken) =>
     Results.Ok(await control.GetStateAsync(cancellationToken)));
+
+app.MapGet("/api/stream-deck", (StreamDeckControlService streamDeck) => Results.Ok(streamDeck.Status));
 
 app.MapPost("/api/devices/{number:int}/name", async (
     int number,
@@ -286,6 +291,9 @@ app.MapPost("/api/mics/{number:int}/mute", async (
 app.MapPost("/api/mics/{number:int}/unmute", async (
     int number, RouterControl control, CancellationToken cancellationToken) =>
     Results.Ok(await control.SetMicrophoneEnabledAsync(number, true, cancellationToken)));
+app.MapPost("/api/mics/{number:int}/toggle", async (
+    int number, RouterControl control, CancellationToken cancellationToken) =>
+    Results.Ok(await control.ToggleMicrophoneEnabledAsync(number, cancellationToken)));
 app.MapPost("/api/mics/mute-all", async (
     RouterControl control, CancellationToken cancellationToken) =>
     Results.Ok(await control.SetMicrophoneEnabledAsync(null, false, cancellationToken)));
@@ -461,6 +469,7 @@ app.MapGet("/api/events", async (
     ConfigStore store,
     LinuxInputControlService inputControls,
     KeyboardLedService keyboardLeds,
+    StreamDeckControlService streamDeck,
     ControlEventBus eventBus) =>
 {
     context.Response.Headers.CacheControl = "no-cache";
@@ -483,6 +492,7 @@ app.MapGet("/api/events", async (
             await WriteEventAsync(context, "ndi-sources", ndiSources, eventJsonOptions);
         await WriteEventAsync(context, "controls", inputControls.Status, eventJsonOptions);
         await WriteEventAsync(context, "keyboard-led", keyboardLeds.Status, eventJsonOptions);
+        await WriteEventAsync(context, "stream-deck", streamDeck.Status, eventJsonOptions);
         await WriteEventAsync(
             context,
             "control-configuration",

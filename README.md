@@ -86,6 +86,15 @@ modules:
 Run `./tests/smoke.sh` after native changes. It builds every C module with
 `-Wall -Wextra -Werror` in addition to running the application smoke tests.
 
+## Stream Deck Mini
+
+An attached original Stream Deck Mini is detected automatically. Buttons 1–4
+toggle the corresponding USB mic feeds and display each channel name and
+LIVE/MUTED state. Button 6 is PANIC — MUTE ALL; button 5 is unassigned.
+Changes made through the web UI,
+API, serial, or mini-keyboard appear on the deck. See
+[Stream Deck controls](docs/stream-deck.md) for setup, settings, and diagnostics.
+
 ## Build and test
 
 From the repository root, run:

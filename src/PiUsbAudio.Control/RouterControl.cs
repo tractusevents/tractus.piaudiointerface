@@ -22,6 +22,17 @@ public sealed class RouterControl(
                 device.InputEnabled = enabled;
         }, cancellationToken);
 
+    // Read and invert inside ConfigStore's update lock, so other controllers
+    // cannot make a tap toggle an out-of-date, locally cached value.
+    public Task<ControlState> ToggleMicrophoneEnabledAsync(
+        int number,
+        CancellationToken cancellationToken = default) =>
+        UpdateAsync(configuration =>
+        {
+            var device = SelectDevice(configuration, number);
+            device.InputEnabled = !device.InputEnabled;
+        }, cancellationToken);
+
     public Task<ControlState> SetDeviceFriendlyNameAsync(
         int number,
         string friendlyName,

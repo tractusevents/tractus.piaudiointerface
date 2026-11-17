@@ -20,6 +20,7 @@ public sealed class RouterConfiguration
     public NdiReceiverConfiguration NdiReceiver { get; set; } = new();
     public List<NdiReceiverConfiguration> NdiReceivers { get; set; } = [];
     public KeyboardControlConfiguration KeyboardControl { get; set; } = new();
+    public StreamDeckConfiguration StreamDeck { get; set; } = new();
     public int ReconcileIntervalSeconds { get; set; } = 10;
     public List<VirtualDeviceConfiguration> Devices { get; set; } =
     [
@@ -53,6 +54,7 @@ public sealed class RouterConfiguration
                 receiver.Number == 1 ? "ndiReceiver" : $"ndiReceivers[{receiver.Number}]"));
         }
         errors.AddRange(KeyboardControl.Validate());
+        errors.AddRange(StreamDeck.Validate());
         if (Devices.Count != 4)
             errors.Add("exactly four virtual devices must be configured");
         if (Devices.Select(device => device.Number).Distinct().Count() != Devices.Count)
@@ -76,6 +78,7 @@ public sealed class RouterConfiguration
     {
         KeyboardControl ??= new KeyboardControlConfiguration();
         KeyboardControl.Normalize();
+        StreamDeck ??= new StreamDeckConfiguration();
         foreach (var device in Devices)
             device.FriendlyName = (device.FriendlyName ?? string.Empty).Trim();
         Ducking.TriggerSources ??= [];

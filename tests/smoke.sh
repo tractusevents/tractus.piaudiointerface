@@ -28,6 +28,7 @@ grep -q 'action.lookup("verb") === "restart"' \
 grep -q 'subject.user === "@TARGET_USER@"' \
     "$project_root/config/50-pi-usb-audio-gadget.rules.in"
 "$dotnet_bin" run --project "$project_root/tests/KeyboardTests/KeyboardTests.csproj"
+"$dotnet_bin" run --project "$project_root/tests/StreamDeckTests/StreamDeckTests.csproj"
 "$dotnet_bin" restore "$control_project" --runtime linux-arm64
 "$dotnet_bin" build "$control_project" --no-restore
 "$dotnet_bin" publish "$control_project" \

@@ -98,6 +98,8 @@ install -Dm644 "$PROJECT_ROOT/config/90-pi-usb-audio-serial.rules" \
     /etc/udev/rules.d/90-pi-usb-audio-serial.rules
 install -Dm644 "$PROJECT_ROOT/config/90-pi-usb-audio-keyboard.rules" \
     /etc/udev/rules.d/90-pi-usb-audio-keyboard.rules
+install -Dm644 "$PROJECT_ROOT/config/90-pi-usb-audio-stream-deck.rules" \
+    /etc/udev/rules.d/90-pi-usb-audio-stream-deck.rules
 install -d -m755 /etc/polkit-1/rules.d
 sed "s/@TARGET_USER@/$TARGET_USER/g" \
     "$PROJECT_ROOT/config/50-pi-usb-audio-gadget.rules.in" \
@@ -264,6 +266,7 @@ loginctl enable-linger "$TARGET_USER"
 
 systemctl daemon-reload
 udevadm control --reload-rules
+udevadm trigger --subsystem-match=hidraw --action=add
 systemctl enable pi-usb-audio-gadget.service
 systemctl start "user@$TARGET_UID.service"
 
